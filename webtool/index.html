@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>TOLHUIN Chord — Editor Web</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  /* ============================================================================
+     Estética RETRO-HARDWARE: esquinas cuadradas, bordes de 2px, sombras duras
+     desplazadas (sin blur), tipografía mono en mayúsculas — como el panel
+     serigrafiado de un sinte. Nada de esquinas redondeadas ni glow.
+     ============================================================================ */
+  :root {
+    --bg: #0b0e12; --panel: #12161d; --panel2: #1a212b; --line: #3d4a5c;
+    --text: #e8eef5; --dim: #8fa0b3; --accent: #ffb454; --accent2: #4dd2a0;
+    --ink: #05070a; --mono: "Consolas", "Menlo", "DejaVu Sans Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 var(--mono);
+    /* rejilla sutil de fondo, como papel milimetrado de servicio técnico */
+    background-image: linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
+    background-size: 26px 26px;
+  }
+  main { max-width: 1000px; margin: 0 auto; padding: 16px 20px 30px; }
+  h1 { font-size: 24px; letter-spacing: 8px; color: var(--accent); margin: 10px 0 2px;
+       text-transform: uppercase; }
+  h1::before { content: "▚ "; color: var(--accent2); }
+  h2 { font-size: 13px; margin: 20px 0 8px; color: var(--accent2);
+       text-transform: uppercase; letter-spacing: 3px;
+       border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+  h2::before { content: "// "; color: var(--dim); }
+  .sub { color: var(--dim); font-size: 12px; margin-bottom: 14px; letter-spacing: 1px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .panel { background: var(--panel); border: 2px solid var(--line);
+           border-radius: 0; padding: 14px 16px; margin-bottom: 16px;
+           box-shadow: 5px 5px 0 var(--ink); }
+  button {
+    background: var(--panel2); color: var(--text);
+    border: 2px solid var(--line); border-radius: 0;
+    padding: 7px 14px; font: 600 12px/1.4 var(--mono);
+    text-transform: uppercase; letter-spacing: 1px; cursor: pointer;
+    box-shadow: 3px 3px 0 var(--ink);
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--ink); }
+  button.primary, button.sel {
+    background: var(--accent); color: #1a1205; border-color: var(--accent);
+  }
+  button.primary:hover, button.sel:hover { color: #000; }
+  button:disabled { opacity: .4; cursor: default; box-shadow: none; }
+  .tabs { display: flex; gap: 0; margin: 16px 0 0; flex-wrap: wrap; }
+  .tabs button { box-shadow: none; border-bottom: none; margin-right: -2px; }
+  .tabs button.sel { position: relative; z-index: 1; }
+  .tabs + .panel, .tabs ~ section.panel { margin-top: 0; }
+  .pill { display: inline-block; padding: 3px 10px; border-radius: 0;
+          border: 1px solid var(--line);
+          font: 11px/1.4 var(--mono); text-transform: uppercase; letter-spacing: 1px;
+          background: var(--panel2); color: var(--dim); }
+  .pill.on { border-color: var(--accent2); color: var(--accent2); background: #0d2018; }
+  .note { color: var(--dim); font-size: 12px; }
+  code { background: var(--panel2); border: 1px solid var(--line); padding: 1px 6px;
+         border-radius: 0; font-size: 12px; }
+  /* sliders de timbre */
+  .params { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 5px 24px; }
+  .param { display: grid; grid-template-columns: 96px 1fr 64px; gap: 8px; align-items: center; }
+  .param label { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
+  .param output { font-size: 12px; text-align: right; color: var(--accent);
+                  font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--accent); height: 4px; }
+  select, input[type=number], input[type=text] {
+    background: var(--panel2); color: var(--text);
+    border: 2px solid var(--line); border-radius: 0;
+    padding: 5px 8px; font: 13px/1.4 var(--mono);
+  }
+  select:focus, input:focus { outline: none; border-color: var(--accent); }
+  /* grilla de bateria: pads cuadrados con sombra dura, acento cada negra */
+  table.grid { border-collapse: collapse; }
+  table.grid th { font: 10px/1.2 var(--mono); color: var(--dim); padding: 2px 4px; }
+  table.grid td { padding: 3px; }
+  .step { width: 30px; height: 30px; border-radius: 0; border: 2px solid var(--line);
+          background: var(--panel2); cursor: pointer; box-shadow: 2px 2px 0 var(--ink); }
+  .step:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 var(--ink); }
+  .step.beat { border-color: #55647a; }
+  .step.on { background: var(--accent); border-color: var(--accent); }
+  #log { background: #060a0e; border: 2px solid var(--line); border-radius: 0;
+         font: 12px/1.5 var(--mono); padding: 8px 10px; height: 110px;
+         overflow-y: auto; white-space: pre-wrap; color: var(--accent2); }
+  #log::before { content: "> monitor\A"; color: var(--dim); white-space: pre; }
+  esp-web-install-button { --esp-tools-button-color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>TOLHUIN</h1>
+  <div class="sub">editor de timbres &amp; batería · ESP32-S3 SuperMini · Web Serial (Chrome/Edge de escritorio)</div>
+
+  <div class="panel row">
+    <button id="btnConnMidi" class="primary">Conectar por MIDI</button>
+    <select id="selMidiDev" style="display:none"></select>
+    <button id="btnConnect">Conectar por Serial</button>
+    <span id="stConn" class="pill">desconectado</span>
+    <span id="stFw" class="note"></span>
+    <span style="flex:1"></span>
+    <span id="stSave" class="pill">—</span>
+    <button id="btnSave">Guardar en NVS</button>
+    <button id="btnLoad">Recargar NVS</button>
+  </div>
+
+  <div class="tabs">
+    <button data-tab="timbres" class="sel">Timbres</button>
+    <button data-tab="drums">Batería</button>
+    <button data-tab="arp">Arpegiador</button>
+    <button data-tab="packs">Paquetes</button>
+    <button data-tab="flash">Flash</button>
+  </div>
+
+  <!-- ============================ TIMBRES ============================ -->
+  <section id="tab-timbres" class="panel">
+    <div class="row" id="timbreBtns"><span class="note">conectá para listar los timbres…</span></div>
+    <div class="row" id="familyRow" style="margin-top:10px; display:none">
+      <label class="note">Familia de oscilador del slot:</label>
+      <select id="familySel"></select>
+      <span class="note">(sólo los USR: elige el MOTOR; el resto de los parámetros son libres)</span>
+    </div>
+
+    <h2>Amplitud</h2>
+    <div class="params" id="grpAmp"></div>
+    <div class="row" style="margin-top:6px">
+      <label class="note"><input type="checkbox" id="percChk"> percusivo (decae a 0 sin sostener, tipo Rhodes)</label>
+    </div>
+    <h2>Filtro</h2>
+    <div class="params" id="grpFil"></div>
+    <h2>LFO</h2>
+    <div class="params" id="grpLfo"></div>
+    <h2>FM / tine <span class="note">(familia EPIANO)</span></h2>
+    <div class="params" id="grpFm"></div>
+
+    <h2>Audición</h2>
+    <div class="row" id="degreeBtns">
+      <span class="note">mantené apretado un grado:</span>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <label class="note"><input type="checkbox" id="subBass"> SUB-BAJO sine dedicado
+        (raíz −1 octava, estilo HiChord — da el registro grave)</label>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button id="btnFactory">Restaurar fábrica (este timbre)</button>
+    </div>
+  </section>
+
+  <!-- ============================ BATERIA ============================ -->
+  <section id="tab-drums" class="panel" style="display:none">
+    <div class="row" id="drumSlots"><span class="note">conectá para editar los patrones…</span></div>
+    <div class="row" style="margin-top:10px">
+      <label class="note">Nombre del patrón</label>
+      <input type="text" id="drumName" maxlength="12" style="width:150px"
+             placeholder="—" disabled>
+      <span style="width:14px"></span>
+      <label class="note">Compases</label>
+      <select id="drumBars"><option value="1">1</option><option value="2">2</option></select>
+      <label class="note">Subdivisión</label>
+      <select id="drumDiv">
+        <option value="4">binaria (semicorcheas)</option>
+        <option value="3">ternaria (tresillos)</option>
+      </select>
+      <span class="note">(los slots 1..3 son de fábrica; renombrá los user)</span>
+    </div>
+    <div style="overflow-x:auto; margin-top:12px">
+      <table class="grid" id="drumGrid"></table>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <label class="note">Volumen batería</label>
+      <input type="range" id="drumGain" min="0" max="1" step="0.01" value="1" style="width:180px">
+      <output id="drumGainVal">1.00</output>
+      <span style="width:14px"></span>
+      <label class="note">Motor</label>
+      <select id="drumEng">
+        <option value="1">samples (kick/snare/hihat reales)</option>
+        <option value="0">sintetizado</option>
+      </select>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <label class="note">BPM</label>
+      <input type="number" id="drumBpm" min="40" max="300" value="120" style="width:80px">
+      <button id="btnDrumPlay" class="primary">&#9654; Patrón</button>
+      <button id="btnDrumStop">&#9632; Stop</button>
+      <span style="width:14px"></span>
+      <button data-hit="kick">Kick</button>
+      <button data-hit="snarehit">Snare</button>
+      <button data-hit="hat">Hat</button>
+    </div>
+    <p class="note" style="margin-top:10px">La grilla es POR PATRÓN: 1-2 compases y
+    subdivisión binaria (4 pasos por negra) o ternaria (3 por negra, tresillos). Al
+    tocar en el equipo (canal DRUMS + GRB) los golpes se cuantizan a ESTA grilla.
+    Los cambios se aplican al instante; «Guardar en NVS» los deja fijos en la placa.</p>
+  </section>
+
+  <!-- ============================ ARPEGIADOR ============================ -->
+  <section id="tab-arp" class="panel" style="display:none">
+    <div class="row" id="arpSlots"><span class="note">conectá para editar los arpegios…</span></div>
+    <div class="row" style="margin-top:10px">
+      <label class="note">Nombre</label>
+      <input type="text" id="arpName" maxlength="12" style="width:150px" placeholder="—" disabled>
+    </div>
+    <div class="params" style="margin-top:12px">
+      <div class="param">
+        <label>estilo</label>
+        <select id="arpStyle">
+          <option value="0">up</option><option value="1">down</option>
+          <option value="2">up-down</option><option value="3">down-up</option>
+          <option value="4">converge</option><option value="5">diverge</option>
+          <option value="6">random</option><option value="7">acorde</option>
+        </select>
+        <output></output>
+      </div>
+      <div class="param">
+        <label>octavas</label>
+        <input type="range" id="arpOct" min="1" max="4" step="1">
+        <output id="arpOctVal"></output>
+      </div>
+      <div class="param">
+        <label>rate</label>
+        <select id="arpRate"></select>
+        <output></output>
+      </div>
+      <div class="param">
+        <label>gate %</label>
+        <input type="range" id="arpGate" min="5" max="100" step="5">
+        <output id="arpGateVal"></output>
+      </div>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <label class="note"><input type="checkbox" id="arpScale"> scale-run
+        (recorre la escala diatónica de la tonalidad en vez de sólo el acorde)</label>
+    </div>
+    <h2>Audición</h2>
+    <div class="row">
+      <label class="note">BPM</label>
+      <input type="number" id="arpBpm" min="40" max="300" value="120" style="width:80px">
+      <span class="note">mantené un grado (el arp corre solo):</span>
+    </div>
+    <div class="row" id="arpDegBtns" style="margin-top:6px"></div>
+    <p class="note" style="margin-top:8px">El estilo/rate/gate se aplican en vivo.
+    Recordá «Guardar en NVS» para que el slot quede fijo en la placa.</p>
+  </section>
+
+  <!-- ============================ PAQUETES ============================ -->
+  <section id="tab-packs" class="panel" style="display:none">
+    <p>Un <b>paquete de sonido</b> (<code>.tolhuin.json</code>) junta TODOS los timbres
+    (incluidos los USR con su familia de oscilador), los patrones de batería (con sus
+    nombres, volumen y motor) y los slots de arpegiador (con sus nombres). Sirve para
+    respaldar tu configuración o publicar paquetes de sonido en la web.</p>
+    <div class="row">
+      <button id="btnExport" class="primary">Exportar paquete</button>
+      <button id="btnImport">Importar paquete…</button>
+      <input type="file" id="importFile" accept=".json,application/json" style="display:none">
+      <label class="note"><input type="checkbox" id="importSave" checked> guardar en NVS al importar</label>
+    </div>
+    <p id="packMsg" class="note"></p>
+  </section>
+
+  <!-- ============================ FLASH ============================ -->
+  <section id="tab-flash" class="panel" style="display:none">
+    <p><b>Desconectá primero el editor</b> — el puerto serie no se puede compartir.</p>
+    <p>
+      <esp-web-install-button manifest="./manifest.json">
+        <button slot="activate" class="primary">Instalar firmware TOLHUIN</button>
+        <span slot="unsupported" class="note">Este navegador no soporta Web Serial (usá Chrome o Edge de escritorio).</span>
+        <span slot="not-allowed" class="note">Serví esta página por HTTPS o localhost.</span>
+      </esp-web-install-button>
+    </p>
+    <p class="note">El binario lo define <code>manifest.json</code> (ver el README de
+    <code>webtool/</code> para generarlo con arduino-cli y publicarlo).</p>
+  </section>
+
+  <div id="log"></div>
+</main>
+
+<script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+<script>
+"use strict";
+// ============================================================================
+// Conexión Web Serial + protocolo de líneas: se manda "#cmd args\n" y el
+// firmware contesta UNA línea JSON. Las respuestas se matchean por contenido
+// (obj.cmd o obj.ok) contra una cola de promesas pendientes.
+// ============================================================================
+let port = null, writer = null, serialOn = false;
+// Transporte Web MIDI (RECOMENDADO): el CDC nativo de la S3 tiene la recepción
+// PC->placa rota (los writes se cuelgan), así que el protocolo viaja envuelto
+// en SysEx: F0 7D 01 <ASCII> F7, y la placa contesta F0 7D 02 <JSON> F7.
+let midiAccess = null, midiIn = null, midiOut = null, midiOn = false;
+let syx = null;      // reensamblado de SysEx (puede llegar fragmentado)
+let pendings = [];   // { match(obj), resolve, timer }
+
+const $ = (id) => document.getElementById(id);
+const logEl = $("log");
+function log(s) {
+  logEl.textContent += s + "\n";
+  logEl.scrollTop = logEl.scrollHeight;
+  const lines = logEl.textContent.split("\n");
+  if (lines.length > 250) logEl.textContent = lines.slice(-200).join("\n");
+}
+
+async function send(line) {
+  // Cualquier comando que CAMBIE config persistente marca "sin guardar".
+  const c0 = line.split(" ")[0];
+  if (/^#(setenv|setdrum|setarp|drumgain|drumeng|drumname|arpname)$/.test(c0)) markDirty();
+  if (midiOn && midiOut) {                            // MIDI: SysEx F0 7D 01 <ascii> F7
+    const bytes = [0xF0, 0x7D, 0x01];
+    for (const ch of line) bytes.push(ch.charCodeAt(0) & 0x7F);
+    bytes.push(0xF7);
+    midiOut.send(bytes);
+    return;
+  }
+  if (serialOn && writer)
+    await writer.write(new TextEncoder().encode(line + "\n"));
+}
+// Manda y espera la respuesta que cumpla `match` (con timeout suave -> null).
+function request(line, match, ms = 1800) {
+  return new Promise((resolve) => {
+    const p = { match, resolve, timer: setTimeout(() => {
+      pendings = pendings.filter(x => x !== p);
+      resolve(null);
+    }, ms) };
+    pendings.push(p);
+    send(line);
+  });
+}
+const reqCmd = (line, cmd, ms) => request(line, (o) => o.cmd === cmd, ms);
+const reqOk  = (line)          => request(line, (o) => o.ok !== undefined);
+
+function feedLine(line) {
+  line = line.trim();
+  if (!line) return;
+  if (line[0] !== "{") { log(line); return; }        // logs del firmware
+  let obj;
+  try { obj = JSON.parse(line); } catch { log(line); return; }
+  const i = pendings.findIndex(p => p.match(obj));
+  if (i >= 0) {
+    const p = pendings.splice(i, 1)[0];
+    clearTimeout(p.timer);
+    p.resolve(obj);
+  }
+}
+
+async function readLoop() {
+  const decoder = new TextDecoder();
+  let buf = "";
+  const reader = port.readable.getReader();
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        feedLine(buf.slice(0, nl));
+        buf = buf.slice(nl + 1);
+      }
+    }
+  } catch (e) {
+    log("! se perdió la conexión (" + e.message + ") — la placa se reseteó o se " +
+        "desenchufó: volvé a apretar «Conectar» y elegí el puerto de nuevo.");
+  }
+  finally { try { reader.releaseLock(); } catch {} disconnected(); }
+}
+
+function updateStatus() {
+  const t = (midiOn && midiIn) ? ("MIDI: " + midiIn.name) : (serialOn ? "Serial" : null);
+  $("stConn").textContent = t ? ("conectado · " + t) : "desconectado";
+  $("stConn").classList.toggle("on", !!t);
+  $("btnConnMidi").textContent = midiOn ? "Desconectar MIDI" : "Conectar por MIDI";
+  $("btnConnect").textContent = serialOn ? "Desconectar Serial" : "Conectar por Serial";
+}
+function disconnected() { serialOn = false; updateStatus(); }
+
+async function connectSerial() {
+  if (serialOn) {                                     // toggle: desconectar
+    try { writer.releaseLock(); await port.close(); } catch {}
+    disconnected();
+    return;
+  }
+  try {
+    port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 115200 });
+    // CDC nativo de la ESP32-S3: dejar DTR/RTS en una combinación explícita y
+    // "de terminal" — si quedan flotando en la secuencia del bootloader, la
+    // placa se resetea al abrir el puerto ("The device has been lost").
+    try { await port.setSignals({ dataTerminalReady: true, requestToSend: false }); } catch {}
+    writer = port.writable.getWriter();
+    serialOn = true;
+    updateStatus();
+    readLoop();
+    await hello();
+  } catch (e) { log("! conexión: " + e.message); }
+}
+$("btnConnect").onclick = connectSerial;
+
+// ---- Conexión por Web MIDI (recomendada; además convive con el monitor serie) ----
+function onMidiMsg(ev) {
+  const d = ev.data;
+  if (d[0] !== 0xF0 && syx === null) return;          // notas en vivo: acá no interesan
+  for (const b of d) {
+    if (b === 0xF0) { syx = []; continue; }
+    if (b === 0xF7) {
+      if (syx && syx.length >= 2 && syx[0] === 0x7D && syx[1] === 0x02)
+        String.fromCharCode(...syx.slice(2)).split("\n").forEach(feedLine);
+      syx = null;
+      continue;
+    }
+    if (syx !== null) syx.push(b);
+  }
+}
+// Lista los puertos MIDI (nunca se elige a ciegas: si no hay un "TOLHUIN",
+// el usuario ve la lista y elige cuál es su placa).
+function refreshMidiDevices() {
+  const ins = [...midiAccess.inputs.values()];
+  const sel = $("selMidiDev");
+  sel.innerHTML = "";
+  ins.forEach((inp) => {
+    const op = document.createElement("option");
+    op.value = inp.id;
+    op.textContent = "MIDI: " + inp.name;
+    sel.appendChild(op);
+  });
+  sel.style.display = ins.length ? "" : "none";
+  const pick = ins.find(i => /TOLHUIN/i.test(i.name));
+  if (pick) sel.value = pick.id;
+  return ins.length > 0;
+}
+// Busca el output que matchee el input elegido (suelen llamarse igual).
+function matchOutput(inputName) {
+  const outs = [...midiAccess.outputs.values()];
+  return outs.find(o => o.name === inputName) ||
+         outs.find(o => /TOLHUIN/i.test(o.name)) || outs[0] || null;
+}
+async function connectMidi() {
+  if (midiOn) {                                       // toggle: desconectar
+    try { if (midiIn) midiIn.onmidimessage = null; } catch {}
+    midiOn = false; midiIn = null; midiOut = null; syx = null;
+    updateStatus();
+    return;
+  }
+  try {
+    if (!navigator.requestMIDIAccess) throw new Error("este navegador no tiene Web MIDI");
+    if (!midiAccess) {
+      midiAccess = await navigator.requestMIDIAccess({ sysex: true });
+      midiAccess.onstatechange = () => { if (!midiOn && midiAccess) refreshMidiDevices(); };
+    }
+    if (!refreshMidiDevices())
+      throw new Error("no hay puertos MIDI (¿la placa está enchufada?)");
+    midiIn  = midiAccess.inputs.get($("selMidiDev").value);
+    midiOut = matchOutput(midiIn ? midiIn.name : "");
+    if (!midiIn || !midiOut) throw new Error("elegí un puerto MIDI de la lista");
+    await midiIn.open(); await midiOut.open();
+    midiIn.onmidimessage = onMidiMsg;
+    midiOn = true;
+    updateStatus();
+    log("· conectado a " + midiIn.name + " (SysEx)");
+    await hello();
+  } catch (e) { log("! conexión MIDI: " + e.message); }
+}
+$("btnConnMidi").onclick = connectMidi;
+$("selMidiDev").onchange = () => { if (midiOn) { connectMidi().then(() => connectMidi()); } };
+
+// ============================================================================
+// Estado del dispositivo (hello) + construcción de la UI.
+// ============================================================================
+let NAMES = [], TCOUNT = 0, DRUMPATS = 8, DRUMSTEPS = 16;
+let ARPSLOTS = 6, ARPRATES = [];
+let curTimbre = 0, curSlot = 4, curArp = 0;
+let USER_FIRST = 7;                                   // primer slot USR (familias: 0..USER_FIRST-1)
+
+// Dirty flag: marca cuando hay cambios de config sin persistir en NVS.
+let dirty = false;
+function markDirty() { dirty = true; updateSaveStatus(); }
+function updateSaveStatus(savedNow) {
+  const el = $("stSave");
+  if (!serialOn && !midiOn) { el.textContent = "—"; el.className = "pill"; return; }
+  if (savedNow) {
+    const t = new Date().toLocaleTimeString();
+    el.textContent = "✓ guardado " + t;
+    el.className = "pill on";
+  } else {
+    el.textContent = dirty ? "● cambios sin guardar" : "guardado";
+    el.className = "pill" + (dirty ? "" : " on");
+  }
+}
+
+async function hello() {
+  // Si la placa se reseteó al abrir el puerto, el arranque (delay de boot +
+  // jingle de ~4.5 s) tarda ~6 s antes de atender el protocolo. Reintentar
+  // el #hello hasta ~14 s en vez de rendirse al primer timeout.
+  let h = null;
+  for (let i = 0; i < 9 && serialOn && !h; i++) {
+    h = await reqCmd("#hello", "hello", 1500);
+    if (!h && i === 0) log("· sin respuesta aún — esperando a que la placa arranque…");
+  }
+  if (!h) {
+    log("! la placa no contesta #hello. Probá «Conectar por MIDI» (recomendado); " +
+        "si estás por serial: desenchufá/enchufá el USB y reconectá.");
+    return;
+  }
+  NAMES = h.names || []; TCOUNT = h.timbres || NAMES.length;
+  DRUMPATS = h.drumpats || 8; DRUMSTEPS = h.drumsteps || 16;
+  ARPSLOTS = h.arpslots || 6; ARPRATES = h.arprates || ["1/4","1/8","1/8T","1/16","1/16T","1/32"];
+  USER_FIRST = NAMES.findIndex(n => n.startsWith("USR"));
+  if (USER_FIRST < 0) USER_FIRST = TCOUNT;
+  $("stFw").textContent = "fw " + (h.fw || "?") + " · " + TCOUNT + " timbres · " + ARPSLOTS + " arps";
+  buildTimbreBtns();
+  buildFamilySel();
+  buildDrumUI();
+  buildArpUI();
+  await loadTimbre(curTimbre);
+  await loadDrumSlot(curSlot);
+  await loadArpSlot(curArp);
+  const st = await reqCmd("#state", "state");         // sincroniza flags globales
+  if (st && st.subbass !== undefined) $("subBass").checked = !!st.subbass;
+  dirty = false; updateSaveStatus();
+}
+
+// ---------------------------------------------------------------- timbres --
+// key = nombre del protocolo (#setenv). [etiqueta, min, max, step, grupo]
+const FIELDS = {
+  atk:     ["ataque ms",   0,   500,  1,      "grpAmp"],
+  dec:     ["decay ms",    10,  3000, 5,      "grpAmp"],
+  sus:     ["sustain",     0,   1,    0.01,   "grpAmp"],
+  rel:     ["release ms",  10,  3000, 5,      "grpAmp"],
+  cut:     ["cutoff Hz",   100, 8000, 10,     "grpFil"],
+  res:     ["resonancia",  0.5, 2.5,  0.01,   "grpFil"],
+  fenv:    ["env oct",     0,   3,    0.05,   "grpFil"],
+  fatk:    ["f.atk ms",    0,   500,  1,      "grpFil"],
+  fdec:    ["f.dec ms",    10,  2000, 5,      "grpFil"],
+  fsus:    ["f.sus",       0,   1,    0.01,   "grpFil"],
+  frel:    ["f.rel ms",    10,  2000, 5,      "grpFil"],
+  lrate:   ["rate Hz",     0.1, 12,   0.1,    "grpLfo"],
+  vib:     ["vibrato",     0,   0.01, 0.0002, "grpLfo"],
+  trem:    ["trémolo",     0,   0.5,  0.01,   "grpLfo"],
+  fmdec:   ["cuerpo ms",   0,   2000, 5,      "grpFm"],
+  fmidx:   ["índice FM",   0,   1,    0.01,   "grpFm"],
+  fmfloor: ["piso FM",     0,   1,    0.01,   "grpFm"],
+  fmdec2:  ["tine ms",     0,   500,  2,      "grpFm"],
+  fmidx2:  ["tine nivel",  0,   1,    0.01,   "grpFm"],
+  tine:    ["tine ratio",  0,   12,   0.02,   "grpFm"],
+  wtmorph: ["morph (WAVE)",0,   1,    0.01,   "grpFil"],
+};
+
+// Crea los sliders (una sola vez).
+for (const [key, [label, min, max, step, grp]] of Object.entries(FIELDS)) {
+  const div = document.createElement("div");
+  div.className = "param";
+  div.innerHTML = `<label>${label}</label>
+    <input type="range" id="p_${key}" min="${min}" max="${max}" step="${step}">
+    <output id="o_${key}"></output>`;
+  $(grp).appendChild(div);
+}
+const fmtVal = (v) => (+v).toPrecision(4).replace(/\.?0+$/, "").replace(/\.$/, "");
+
+const debounce = {};
+function bindParam(key) {
+  const el = $("p_" + key);
+  el.addEventListener("input", () => {
+    $("o_" + key).textContent = fmtVal(el.value);
+    clearTimeout(debounce[key]);
+    debounce[key] = setTimeout(() => send(`#setenv ${curTimbre} ${key}=${el.value}`), 70);
+  });
+}
+Object.keys(FIELDS).forEach(bindParam);
+$("percChk").addEventListener("change", () =>
+  send(`#setenv ${curTimbre} perc=${$("percChk").checked ? 1 : 0}`));
+$("familySel").addEventListener("change", () =>
+  send(`#setenv ${curTimbre} family=${$("familySel").value}`));
+
+function buildTimbreBtns() {
+  const box = $("timbreBtns");
+  box.innerHTML = "";
+  NAMES.forEach((n, t) => {
+    const b = document.createElement("button");
+    b.textContent = n;
+    b.onclick = () => { send("#timbre " + t); loadTimbre(t); };
+    b.id = "tb" + t;
+    box.appendChild(b);
+  });
+}
+function buildFamilySel() {
+  const sel = $("familySel");
+  sel.innerHTML = "";
+  for (let f = 0; f < USER_FIRST; f++) {
+    const o = document.createElement("option");
+    o.value = f; o.textContent = NAMES[f];
+    sel.appendChild(o);
+  }
+}
+function applyEnvToUI(e) {
+  for (const key of Object.keys(FIELDS)) {
+    if (e[key] === undefined) continue;
+    $("p_" + key).value = e[key];
+    $("o_" + key).textContent = fmtVal(e[key]);
+  }
+  $("percChk").checked = !!e.perc;
+  const isUser = curTimbre >= USER_FIRST;
+  $("familyRow").style.display = isUser ? "flex" : "none";
+  if (isUser && e.family !== undefined) $("familySel").value = e.family;
+}
+async function loadTimbre(t) {
+  curTimbre = t;
+  NAMES.forEach((_, i) => { const b = $("tb" + i); if (b) b.classList.toggle("sel", i === t); });
+  const e = await reqCmd("#getenv " + t, "env");
+  if (e) applyEnvToUI(e);
+}
+// Manda un EnvCfg completo en tandas de 8 campos (el buffer serial es de 320 chars).
+async function pushEnv(t, e) {
+  const keys = Object.keys(FIELDS).filter(k => e[k] !== undefined);
+  for (let i = 0; i < keys.length; i += 8) {
+    const kv = keys.slice(i, i + 8).map(k => `${k}=${e[k]}`).join(" ");
+    await reqOk(`#setenv ${t} ${kv}`);
+  }
+  const extra = [];
+  if (e.perc   !== undefined) extra.push("perc=" + (e.perc ? 1 : 0));
+  if (e.family !== undefined) extra.push("family=" + e.family);
+  if (extra.length) await reqOk(`#setenv ${t} ${extra.join(" ")}`);
+}
+$("btnFactory").onclick = async () => {
+  const f = await reqCmd("#factory " + curTimbre, "factory");
+  if (!f) return;
+  await pushEnv(curTimbre, f);          // aplica la fábrica al vivo
+  applyEnvToUI(f);
+};
+
+// Audición por grados (misma armonía diatónica que los botones físicos).
+for (let d = 1; d <= 7; d++) {
+  const b = document.createElement("button");
+  b.textContent = ["I", "II", "III", "IV", "V", "VI", "VII"][d - 1];
+  b.onpointerdown = () => send("#degree " + d + " 0");
+  b.onpointerup = b.onpointerleave = () => send("#chordoff");
+  $("degreeBtns").appendChild(b);
+}
+// Sub-bajo global (estilo HiChord). No persiste hasta «Guardar en NVS».
+$("subBass").addEventListener("change", () => send("#subbass " + ($("subBass").checked ? 1 : 0)));
+
+// ---------------------------------------------------------------- bateria --
+const SLOT_NAMES = ["off", "básico", "4floor", "síncopa", "user1", "user2", "user3", "user4"];
+const INSTS = [["kick", "Kick"], ["snare", "Snare"], ["hat", "Hat"]];
+let masks = { kick: 0, snare: 0, hat: 0 };
+
+function buildDrumUI() {
+  const box = $("drumSlots");
+  box.innerHTML = "";
+  for (let p = 1; p < DRUMPATS; p++) {
+    const b = document.createElement("button");
+    b.textContent = SLOT_NAMES[p] || ("slot" + p);
+    b.id = "ds" + p;
+    b.onclick = () => loadDrumSlot(p);
+    box.appendChild(b);
+  }
+  buildDrumGridTable();
+}
+// La grilla se ARMA según el patrón: bars (1..2) × 4 pulsos × div pasos por
+// pulso (4 binaria / 3 ternaria). El encabezado numera los pulsos; el primer
+// paso de cada compás va marcado.
+let gridBars = 1, gridDiv = 4;
+function gridSteps() { return gridBars * 4 * gridDiv; }
+function buildDrumGridTable() {
+  const N = gridSteps();
+  const tbl = $("drumGrid");
+  let head = "<tr><th></th>";
+  for (let s = 0; s < N; s++) {
+    const beat = (s % gridDiv === 0) ? (Math.floor(s / gridDiv) % 4 + 1) : "·";
+    head += `<th>${s % (4 * gridDiv) === 0 ? "|" + beat : beat}</th>`;
+  }
+  tbl.innerHTML = head + "</tr>";
+  for (const [key, label] of INSTS) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<th style="text-align:right">${label}</th>`;
+    for (let s = 0; s < N; s++) {
+      const td = document.createElement("td");
+      const c = document.createElement("div");
+      c.className = "step" + (s % gridDiv === 0 ? " beat" : "");
+      c.id = `st_${key}_${s}`;
+      c.onclick = () => toggleStep(key, s);
+      td.appendChild(c);
+      tr.appendChild(td);
+    }
+    tbl.appendChild(tr);
+  }
+  paintGrid();
+}
+function paintGrid() {
+  for (const [key] of INSTS)
+    for (let s = 0; s < gridSteps(); s++) {
+      const c = $(`st_${key}_${s}`);
+      if (c) c.classList.toggle("on", !!(masks[key] & (1 << s)));
+    }
+}
+// >>> 0: las máscaras son de 32 bits SIN signo (el bit 31 en JS sale negativo).
+function sendDrum() {
+  send(`#setdrum ${curSlot} ${masks.kick >>> 0} ${masks.snare >>> 0} ` +
+       `${masks.hat >>> 0} ${gridBars} ${gridDiv}`);
+}
+function toggleStep(key, s) {
+  masks[key] = (masks[key] ^ (1 << s)) >>> 0;
+  paintGrid();
+  sendDrum();
+}
+$("drumBars").addEventListener("change", () => {
+  gridBars = +$("drumBars").value; buildDrumGridTable(); sendDrum();
+});
+$("drumDiv").addEventListener("change", () => {
+  gridDiv = +$("drumDiv").value; buildDrumGridTable(); sendDrum();
+});
+async function loadDrumSlot(p) {
+  curSlot = p;
+  for (let i = 1; i < DRUMPATS; i++) { const b = $("ds" + i); if (b) b.classList.toggle("sel", i === p); }
+  const d = await reqCmd("#getdrum " + p, "drum");
+  if (!d) return;
+  masks = { kick: (d.kick || 0) >>> 0, snare: (d.snare || 0) >>> 0, hat: (d.hat || 0) >>> 0 };
+  gridBars = d.bars || 1;
+  gridDiv  = d.div  || 4;
+  $("drumBars").value = gridBars;
+  $("drumDiv").value  = gridDiv;
+  buildDrumGridTable();
+  if (d.gain !== undefined) {
+    $("drumGain").value = d.gain;
+    $("drumGainVal").textContent = (+d.gain).toFixed(2);
+  }
+  if (d.eng !== undefined) $("drumEng").value = d.eng;
+  if (d.name !== undefined) {                         // nombre editable (slots >=4)
+    $("drumName").value = d.name;
+    const b = $("ds" + p); if (b) b.textContent = d.name;
+    const editable = p >= 4;
+    $("drumName").disabled = !editable;
+    $("drumName").placeholder = editable ? "nombre…" : "(de fábrica)";
+  }
+}
+$("drumName").addEventListener("input", () => {
+  const v = $("drumName").value.replace(/[^\x20-\x7e]/g, "").trim();
+  clearTimeout(debounce.dn);
+  debounce.dn = setTimeout(() => {
+    send(`#drumname ${curSlot} ${v}`);
+    const b = $("ds" + curSlot); if (b) b.textContent = v || ("slot" + curSlot);
+  }, 120);
+});
+$("drumGain").addEventListener("input", () => {
+  $("drumGainVal").textContent = (+$("drumGain").value).toFixed(2);
+  clearTimeout(debounce.dg);
+  debounce.dg = setTimeout(() => send("#drumgain " + $("drumGain").value), 70);
+});
+$("drumEng").addEventListener("change", () => send("#drumeng " + $("drumEng").value));
+$("btnDrumPlay").onclick = () => send(`#drums ${curSlot} ${$("drumBpm").value}`);
+$("btnDrumStop").onclick = () => send(`#drums 0 ${$("drumBpm").value}`);
+document.querySelectorAll("[data-hit]").forEach(b =>
+  b.onclick = () => send("#" + b.dataset.hit));
+
+// -------------------------------------------------------------- arpegiador --
+let arp = { style: 0, oct: 1, rate: 3, gate: 80, scale: 0 };
+
+function buildArpUI() {
+  const box = $("arpSlots");
+  box.innerHTML = "";
+  for (let s = 0; s < ARPSLOTS; s++) {
+    const b = document.createElement("button");
+    b.textContent = "arp" + (s + 1);
+    b.id = "as" + s;
+    b.onclick = () => loadArpSlot(s);
+    box.appendChild(b);
+  }
+  const rsel = $("arpRate");
+  rsel.innerHTML = "";
+  ARPRATES.forEach((r, i) => {
+    const o = document.createElement("option"); o.value = i; o.textContent = r; rsel.appendChild(o);
+  });
+  const db = $("arpDegBtns"); db.innerHTML = "";
+  for (let d = 1; d <= 7; d++) {
+    const b = document.createElement("button");
+    b.textContent = ["I", "II", "III", "IV", "V", "VI", "VII"][d - 1];
+    // audición: activa el slot y toca el grado (el arp corre); soltar = silencio.
+    b.onpointerdown = async () => { await send(`#arp ${curArp} 1`); send("#degree " + d + " 0"); };
+    b.onpointerup = b.onpointerleave = () => send("#chordoff");
+    db.appendChild(b);
+  }
+}
+function pushArp() {
+  send(`#setarp ${curArp} style=${arp.style} oct=${arp.oct} rate=${arp.rate} gate=${arp.gate} scale=${arp.scale}`);
+}
+async function loadArpSlot(s) {
+  curArp = s;
+  for (let i = 0; i < ARPSLOTS; i++) { const b = $("as" + i); if (b) b.classList.toggle("sel", i === s); }
+  const a = await reqCmd("#getarp " + s, "arp");
+  if (!a) return;
+  arp = { style: a.style, oct: a.oct, rate: a.rate, gate: a.gate, scale: a.scale };
+  $("arpStyle").value = arp.style;
+  $("arpOct").value = arp.oct;   $("arpOctVal").textContent = arp.oct;
+  $("arpRate").value = arp.rate;
+  $("arpGate").value = arp.gate; $("arpGateVal").textContent = arp.gate;
+  $("arpScale").checked = !!arp.scale;
+  $("arpName").value = a.name || ""; $("arpName").disabled = false;
+  const b = $("as" + s); if (b) b.textContent = a.name || ("arp" + (s + 1));
+}
+$("arpStyle").addEventListener("change", () => { arp.style = +$("arpStyle").value; pushArp(); });
+$("arpRate").addEventListener("change",  () => { arp.rate = +$("arpRate").value; pushArp(); });
+$("arpScale").addEventListener("change", () => { arp.scale = $("arpScale").checked ? 1 : 0; pushArp(); });
+$("arpOct").addEventListener("input", () => {
+  arp.oct = +$("arpOct").value; $("arpOctVal").textContent = arp.oct;
+  clearTimeout(debounce.ao); debounce.ao = setTimeout(pushArp, 60);
+});
+$("arpGate").addEventListener("input", () => {
+  arp.gate = +$("arpGate").value; $("arpGateVal").textContent = arp.gate;
+  clearTimeout(debounce.ag); debounce.ag = setTimeout(pushArp, 60);
+});
+$("arpName").addEventListener("input", () => {
+  const v = $("arpName").value.replace(/[^\x20-\x7e]/g, "").trim();
+  clearTimeout(debounce.an);
+  debounce.an = setTimeout(() => {
+    send(`#arpname ${curArp} ${v}`);
+    const b = $("as" + curArp); if (b) b.textContent = v || ("arp" + (curArp + 1));
+  }, 120);
+});
+$("arpBpm").addEventListener("change", () => send("#bpm " + $("arpBpm").value));
+
+// ---------------------------------------------------------------- paquetes --
+const connected = () => serialOn || midiOn;
+
+$("btnExport").onclick = async () => {
+  if (!connected()) { $("packMsg").textContent = "Conectá el TOLHUIN primero."; return; }
+  $("packMsg").textContent = "Leyendo la placa…";
+  const pack = { formato: "tolhuin-pack", v: 2, fw: $("stFw").textContent,
+                 fecha: new Date().toISOString(), timbres: [], drums: null, arps: [] };
+  for (let t = 0; t < TCOUNT; t++) {
+    const e = await reqCmd("#getenv " + t, "env");
+    if (e) { delete e.cmd; e.name = NAMES[t]; pack.timbres.push(e); }
+  }
+  const pats = [];
+  let gain = 1, eng = 1;
+  for (let p = 1; p < DRUMPATS; p++) {
+    const d = await reqCmd("#getdrum " + p, "drum");
+    if (d) { pats.push({ p, kick: d.kick, snare: d.snare, hat: d.hat, name: d.name }); gain = d.gain; eng = d.eng; }
+  }
+  pack.drums = { steps: DRUMSTEPS, gain, eng, patterns: pats };
+  for (let s = 0; s < ARPSLOTS; s++) {
+    const a = await reqCmd("#getarp " + s, "arp");
+    if (a) { delete a.cmd; pack.arps.push(a); }
+  }
+  const blob = new Blob([JSON.stringify(pack, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "paquete.tolhuin.json";
+  a.click();
+  URL.revokeObjectURL(a.href);
+  $("packMsg").textContent = "Paquete exportado (" + pack.timbres.length + " timbres, "
+                           + pats.length + " patrones, " + pack.arps.length + " arps).";
+};
+
+$("btnImport").onclick = () => $("importFile").click();
+$("importFile").addEventListener("change", async (ev) => {
+  const file = ev.target.files[0];
+  ev.target.value = "";
+  if (!file) return;
+  if (!connected()) { $("packMsg").textContent = "Conectá el TOLHUIN primero."; return; }
+  let pack;
+  try { pack = JSON.parse(await file.text()); }
+  catch { $("packMsg").textContent = "El archivo no es un JSON válido."; return; }
+  if (pack.formato !== "tolhuin-pack") { $("packMsg").textContent = "No es un paquete TOLHUIN."; return; }
+  $("packMsg").textContent = "Aplicando…";
+  for (const e of (pack.timbres || [])) {
+    if (e.t === undefined || e.t >= TCOUNT) continue;
+    await pushEnv(e.t, e);
+  }
+  if (pack.drums) {
+    for (const d of (pack.drums.patterns || [])) {
+      await reqOk(`#setdrum ${d.p} ${(d.kick||0)>>>0} ${(d.snare||0)>>>0} ` +
+                  `${(d.hat||0)>>>0} ${d.bars||1} ${d.div||4}`);
+      if (d.name && d.p >= 4) await reqOk(`#drumname ${d.p} ${d.name}`);
+    }
+    if (pack.drums.gain !== undefined) await reqOk("#drumgain " + pack.drums.gain);
+    if (pack.drums.eng !== undefined)  await reqOk("#drumeng " + pack.drums.eng);
+  }
+  for (const a of (pack.arps || [])) {
+    if (a.slot === undefined || a.slot >= ARPSLOTS) continue;
+    await reqOk(`#setarp ${a.slot} style=${a.style} oct=${a.oct} rate=${a.rate} gate=${a.gate} scale=${a.scale}`);
+    if (a.name) await reqOk(`#arpname ${a.slot} ${a.name}`);
+  }
+  if ($("importSave").checked) { await reqOk("#save"); dirty = false; updateSaveStatus(true); }
+  else markDirty();
+  await loadTimbre(curTimbre);
+  await loadDrumSlot(curSlot);
+  await loadArpSlot(curArp);
+  $("packMsg").textContent = "Paquete aplicado" + ($("importSave").checked ? " y guardado en NVS." : ".");
+});
+
+// ---------------------------------------------------------------- comunes --
+$("btnSave").onclick = async () => {
+  const r = await request("#save", (o) => o.saved !== undefined || o.ok !== undefined, 3000);
+  if (r) { dirty = false; updateSaveStatus(true); log("· guardado en NVS ✓"); }
+  else log("! sin confirmación del #save (¿conectado?)");
+};
+$("btnLoad").onclick = async () => {
+  await reqOk("#load");
+  await loadTimbre(curTimbre);
+  await loadDrumSlot(curSlot);
+  await loadArpSlot(curArp);
+  dirty = false; updateSaveStatus();
+  log("· NVS recargada");
+};
+
+// pestañas
+document.querySelectorAll(".tabs button").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("sel", x === b));
+    for (const tab of ["timbres", "drums", "arp", "packs", "flash"])
+      $("tab-" + tab).style.display = (b.dataset.tab === tab) ? "" : "none";
+  };
+});
+
+if (!navigator.requestMIDIAccess && !("serial" in navigator))
+  log("! Este navegador no tiene Web MIDI ni Web Serial: usá Chrome o Edge de escritorio.");
+else
+  log("Conectá el TOLHUIN por USB y apretá «Conectar por MIDI» (recomendado: en la\n" +
+      "S3 la recepción del serial nativo no es confiable; el MIDI además convive\n" +
+      "con el monitor serie abierto).");
+</script>
+</body>
+</html>

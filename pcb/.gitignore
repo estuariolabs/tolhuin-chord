@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+out/gerbers/
+out/*.dsn
+out/*.ses
+out/*.kicad_pcb
+out/drc.rpt

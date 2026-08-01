@@ -1,0 +1,16 @@
+value,qty,refs,footprint
+100nF,5,C1 C2 C3 C4 C5,Capacitor_SMD:C_0805_2012Metric
+100uF,1,C7,Capacitor_SMD:C_0805_2012Metric
+10uF,1,C6,Capacitor_SMD:C_0805_2012Metric
+4k7,2,R1 R2,Resistor_SMD:R_0805_2012Metric
+ADS1115,1,U3,Connector_PinHeader_2.54mm:PinHeader_1x07_P2.54mm_Vertical
+AudioJack-3.5mm,1,J1,Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical
+BuckBoost-3V3,1,U7,Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical
+ESP32-S3-DevKitC-1,1,U1,Connector_PinHeader_2.54mm:PinHeader_1x19_P2.54mm_Vertical
+Joystick-HW504,1,U5,Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical
+LiPo-3V7,1,BT1,Connector_JST:JST_PH_B2B-PH-K_1x02_P2.00mm_Vertical
+PCM5102A,1,U2,Connector_PinHeader_2.54mm:PinHeader_1x12_P2.54mm_Vertical
+PWR-SWITCH,1,SW12,Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical
+SSD1306-OLED,1,U4,Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical
+SW_PUSH,11,SW1 SW10 SW11 SW2 SW3 SW4 SW5 SW6 SW7 SW8 SW9,Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical
+TP4056-charger,1,U6,Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical

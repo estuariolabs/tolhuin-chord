@@ -1,0 +1,23 @@
+# Artefactos de build del firmware
+flash/
+*.bin
+*.uf2
+*.elf
+
+# Binarios de test / objetos
+*.exe
+*.o
+*.obj
+test/test_dsp
+test/test_harmony
+test/test_evloop
+
+# Salidas de render de tests (NO los samples propios de tools/samples/)
+test/out_*.wav
+
+# Python
+__pycache__/
+*.pyc
+
+# Config local de herramientas
+.claude/
