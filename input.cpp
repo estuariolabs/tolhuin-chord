@@ -1,7 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
-// TOLHUIN Chord.  Copyright (C) 2026 Mauro Restivo.
-// Distribuido bajo GPL-3.0-or-later; ver el archivo LICENSE.
-
 /* ============================================================================
    input.cpp  -  Controles físicos (capa de hardware). Portado del MVP.
    Botones activo-bajo (INPUT_PULLUP) con antirrebote. Joystick HW-504 vía
@@ -124,6 +120,7 @@ static const ColorZone SECTOR[8] = {
 };
 
 void inputInit() {
+  Serial.printf("[input] hwrev=%d hold_gpio=%d\n", TOLHUIN_HW_REV, PIN_HOLD);
   for (int i = 0; i < PIN_CHORD_COUNT; i++) {
     pinMode(PIN_CHORD[i], INPUT_PULLUP);
     pressed[i] = false; lastRaw[i] = false; lastChange[i] = 0;
@@ -145,9 +142,17 @@ void inputInit() {
     if (Wire.endTransmission() == 0) { Serial.printf(" 0x%02X", a); i2cFound++; }
   }
   Serial.printf("  (%d dispositivos)\n", i2cFound);
-  Wire.beginTransmission(ADS_ADDR);
-  adsOk = (Wire.endTransmission() == 0);
-  ads.begin(ADS_ADDR);
+  // La dirección del ADS depende de cómo quedó su pin ADDR en CADA módulo:
+  // GND=0x48, VDD=0x49, SDA=0x4A, SCL=0x4B. Se prueban las cuatro (empezando por
+  // la del prototipo 1) para que un armado nuevo no dependa de un strap puntual.
+  static const uint8_t ADS_TRY[5] = { ADS_ADDR, 0x48, 0x49, 0x4A, 0x4B };
+  uint8_t adsAddr = ADS_ADDR;
+  adsOk = false;
+  for (int t = 0; t < 5 && !adsOk; t++) {
+    Wire.beginTransmission(ADS_TRY[t]);
+    if (Wire.endTransmission() == 0) { adsAddr = ADS_TRY[t]; adsOk = true; }
+  }
+  ads.begin(adsAddr);
   Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);     // restaurar pines (ads.begin los pisa)
   if (adsOk) {
     ads.setGain(GAIN_ONE);
@@ -163,7 +168,8 @@ void inputInit() {
   // Sembrar el auto-rango alrededor del centro inicial (se expande al moverse).
   jxMin = jcx - 2000; jxMax = jcx + 2000;
   jyMin = jcy - 2000; jyMax = jcy + 2000;
-  Serial.printf("[input] ADS present=%d  centro x=%d y=%d\n", adsOk ? 1 : 0, jcx, jcy);
+  Serial.printf("[input] ADS present=%d addr=0x%02X  centro x=%d y=%d\n",
+                adsOk ? 1 : 0, adsAddr, jcx, jcy);
 }
 
 static void pollJoystick() {
@@ -173,6 +179,12 @@ static void pollJoystick() {
 
   int16_t rx = ads.readADC_SingleEnded(0);
   int16_t ry = ads.readADC_SingleEnded(1);
+  // --- DEBUG TEMPORAL de bring-up: valores crudos del ADS por serie (1/s). ---
+  // Sacar cuando el joystick del prototipo 2 esté verificado.
+  { static uint32_t dbgMs = 0;
+    if (millis() - dbgMs > 1000) { dbgMs = millis();
+      Serial.printf("[joy] A0=%d A1=%d  centro x=%d y=%d  rango x[%d..%d] y[%d..%d]\n",
+                    rx, ry, jcx, jcy, jxMin, jxMax, jyMin, jyMax); } }
 #if JOY_SWAP_XY
   { int16_t t = rx; rx = ry; ry = t; }          // ejes cruzados -> intercambia las lecturas
 #endif

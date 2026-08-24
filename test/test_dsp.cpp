@@ -1,7 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
-// TOLHUIN Chord.  Copyright (C) 2026 Mauro Restivo.
-// Distribuido bajo GPL-3.0-or-later; ver el archivo LICENSE.
-
 /* ============================================================================
    test_dsp.cpp  -  Test de host del núcleo DSP (sin hardware).
    dsp.cpp es C++ puro: se renderiza a un buffer float en la PC y se verifican
@@ -389,6 +385,21 @@ static void testDelay() {
 
   printf("  delay      ecos e1=%.3f e2=%.3f e3=%.3f (fb~0.5)  L!=R en dL: |%.3f-%.3f|\n",
          e1, e2, e3, L[dL], R[dL]);
+
+  // Ping-pong: un impulso sólo a izquierda debe reaparecer luego a derecha por
+  // la realimentación cruzada, sin otro buffer ni pérdida de estabilidad.
+  d.reset(); d.setParams(10.0f, 0.5f, 1.0f, sr);
+  int dR = d.dR, NP = dL + dR + 4;
+  float firstL = 0, crossR = 0;
+  for (int i = 0; i < NP; i++) {
+    float wl, wr; d.processWetPingPong(i == 0 ? 1.0f : 0.0f, 0.0f, wl, wr);
+    if (i == dL) firstL = wl;
+    if (i == dL + dR) crossR = wr;
+  }
+  CHECK(firstL > 0.9f, "[DELAY] ping-pong perdió el primer eco L: %.3f", firstL);
+  CHECK(crossR > 0.25f && crossR < 0.40f,
+        "[DELAY] ping-pong amortiguado no cruzó L->R: %.3f", crossR);
+  printf("  pingpong   primer L=%.3f, cruce R=%.3f (sin buffer adicional)\n", firstL, crossR);
 }
 
 // T2.2: la reverb debe dar una cola que decae suave (RT60 en rango), estable y
@@ -432,6 +443,16 @@ static void testReverb() {
   CHECK(rt60 > 0.2f && rt60 < 4.0f, "[REVERB] RT60 fuera de rango: %.2f s", rt60);
   printf("  reverb     RT60=%.2f s  pico=%.3f  env@0.5s=%.4f env@2s=%.4f\n",
          rt60, env[pk], envAt(0.5f), envAt(2.0f));
+
+  Reverb rs; rs.reset(); rs.setParams(0.6f, 0.5f, 1.0f);
+  std::vector<float> sl(N), srw(N);
+  for (int i = 0; i < N; i++) rs.processStereo(i == 0 ? 1.0f : 0.0f, sl[i], srw[i]);
+  double dot=0, el=0, er=0, diff=0;
+  for (int i=0;i<N;i++) { dot+=(double)sl[i]*srw[i]; el+=(double)sl[i]*sl[i]; er+=(double)srw[i]*srw[i]; diff+=fabs((double)sl[i]-srw[i]); }
+  double corr = dot / sqrt(el*er + 1e-30);
+  CHECK(diff/N > 1e-6, "[REVERB] retorno stereo idéntico");
+  CHECK(corr < 0.98, "[REVERB] retorno stereo demasiado correlacionado: %.3f", corr);
+  printf("  reverb st  corr(L,R)=%.3f, matriz de combs/allpass reutilizada\n", corr);
 }
 
 // T3.1: STRUM. El plan ordena las notas ascendente y las espacia por el retardo;
@@ -1576,6 +1597,17 @@ static void testVoiceGroups() {
   dspInit();
 }
 
+static void testHbrassVoiceBudget() {
+  dspInit();
+  for (int n=48; n<60; ++n) dspNoteOn((uint8_t)n, T_HBRASS, 1.0f, 0, VG_CHORD);
+  CHECK(dspActiveVoices() == 7, "[HBRASS] limite de voces esperado=7, dio %d", dspActiveVoices());
+  std::vector<float> b(AUDIO_BLOCK * 8);
+  dspRenderBlock(b.data(), (int)b.size());
+  bool fin=true; for(float x:b) if(!std::isfinite(x)) fin=false;
+  CHECK(fin, "[HBRASS] render con robo de voz produjo NaN");
+  printf("  hbrass    limite=7 voces (6 acorde+bajo), robo estable y render finito\n");
+}
+
 int main(int argc, char** argv) {
   // Directorio de salida de los .wav (argv[1]); por defecto el dir actual.
   const char* dir = (argc > 1) ? argv[1] : ".";
@@ -1603,9 +1635,17 @@ int main(int argc, char** argv) {
     snprintf(pWave, sizeof(pWave), "%s/out_wave.wav", dir);
     testTimbre(T_WAVE, pWave);
   }
+  {
+    char pHbrass[512];
+    snprintf(pHbrass, sizeof(pHbrass), "%s/out_hbrass.wav", dir);
+    testTimbre(T_HBRASS, pHbrass);
+  }
 
   printf("[test_dsp] WAVE (wavetable morphing):\n");
   testWaveMorph();
+
+  printf("[test_dsp] HBRASS (presupuesto de voces del ESP32-S3):\n");
+  testHbrassVoiceBudget();
 
   printf("[test_dsp] grupos de voz (capas del looper no se cruzan):\n");
   testVoiceGroups();

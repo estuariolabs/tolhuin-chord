@@ -1,7 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
-// TOLHUIN Chord.  Copyright (C) 2026 Mauro Restivo.
-// Distribuido bajo GPL-3.0-or-later; ver el archivo LICENSE.
-
 /* ============================================================================
    midi.cpp  -  Entrada MIDI por USB (TinyUSB) y BLE (NimBLE), parseo crudo.
    Sin la MIDI Library: se parsean los bytes a mano (más robusto y liviano).

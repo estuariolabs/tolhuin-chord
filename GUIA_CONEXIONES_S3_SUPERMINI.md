@@ -7,6 +7,10 @@
 >
 > El firmware de la carpeta [`flash/`](flash/) ya está compilado con este mapeo.
 > Todo funciona a **3.3 V**. Masa (GND) **común** para todo.
+>
+> ⚠️ **HOLD se movió de GPIO18 a GPIO6** (se rompió la pista/pad de 18 en el
+> prototipo del case nuevo). GPIO18 queda libre pero con el pad dañado en esa
+> unidad; no lo reutilices ahí.
 
 ## Mapa del teclado (según el cableado físico confirmado)
 | Señal | GPIO | | Señal | GPIO |
@@ -14,7 +18,7 @@
 | Tecla I   | **8**  | | Tecla VII | **10** |
 | Tecla II  | **9**  | | NAV−      | **11** |
 | Tecla III | **17** | | NAV+      | **12** |
-| Tecla IV  | **45** | | HOLD      | **18** |
+| Tecla IV  | **45** | | HOLD      | **6**  |
 | Tecla V   | **5**  | | VOICING   | **7**  |
 | Tecla VI  | **14** | | Joystick SW | **13** |
 
@@ -87,7 +91,7 @@ Usan pull-up interno (no necesitan resistencia externa). Caen en `{1-7, 10-16}` 
 | **VII** | **GPIO10** | grado VII |
 | **NAV−**    | GPIO11 | tónica −1 / navegar menú |
 | **NAV+**    | GPIO12 | tónica +1 / navegar menú |
-| **HOLD**    | **GPIO18** | acorde sostenido |
+| **HOLD**    | **GPIO6**  | acorde sostenido |
 | **VOICING** | GPIO7  | cicla inversiones / en menú: editar |
 
 ---
@@ -95,12 +99,12 @@ Usan pull-up interno (no necesitan resistencia externa). Caen en `{1-7, 10-16}` 
 ## 2. Todos los pines usados (checklist)
 
 **GPIO de señal (17):**
-`5, 7, 8, 9, 10, 11, 12, 13, 14, 17, 18, 45, 38, 39, 40, 41, 42`
+`5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 17, 45, 38, 39, 40, 41, 42`
 
 **Rieles:** `3V3` (alimenta OLED, ADS1115, joystick, PCM5102) y `GND` (común).
 
-**Reserva libre:** `1, 2, 3, 4, 6, 15, 16`.
-**No usar en esta placa:** `48` (LED RGB onboard).
+**Reserva libre:** `1, 2, 3, 4, 15, 16` (y `18` en placas con el pad sano).
+**No usar en esta placa:** `48` (LED RGB onboard), `18` (pad roto en este prototipo).
 **No usar nunca:** `33–37` (PSRAM del looper), `19/20` (USB), `43/44` (UART), `0/46` (strapping).
 
 ---

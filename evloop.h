@@ -1,7 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
-// TOLHUIN Chord.  Copyright (C) 2026 Mauro Restivo.
-// Distribuido bajo GPL-3.0-or-later; ver el archivo LICENSE.
-
 /* ============================================================================
    evloop.h  -  LOOPER DE EVENTOS (1 pista de acordes, cuantizado).
    Graba EVENTOS de acorde (grado/zona/calidad/bajo), no audio: un loop de

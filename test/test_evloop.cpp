@@ -1,7 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
-// TOLHUIN Chord.  Copyright (C) 2026 Mauro Restivo.
-// Distribuido bajo GPL-3.0-or-later; ver el archivo LICENSE.
-
 /* ============================================================================
    test_evloop.cpp  -  Tests del looper de eventos (evloop.cpp) en host.
    Deterministas: el tiempo es un float en PASOS que controla el test.

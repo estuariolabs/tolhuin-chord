@@ -1,7 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
-// TOLHUIN Chord.  Copyright (C) 2026 Mauro Restivo.
-// Distribuido bajo GPL-3.0-or-later; ver el archivo LICENSE.
-
 /* ============================================================================
    webcfg.cpp  -  Configuración por USB (Web Serial) + persistencia NVS.
    Ver webcfg.h para el protocolo. Capa de HARDWARE: puede usar Arduino y
@@ -143,13 +139,15 @@ struct SessCfg {
   uint8_t  drumPat, arpSlot, tremMode;
   uint8_t  chorus, body, glide, sustain, subBass;
   uint8_t  joyMap;                    // mapa de joystick (JoyMap) [v3]
+  uint8_t  voiceLead;                 // conducción de voces (VoiceLeadMode) [v4]
 };
-#define SESS_VER 3
+#define SESS_VER 4
 static int gSessTimbre = -1;          // timbre restaurado (-1 = sin sesión)
 
 static void nvsSave() {
   prefs.begin("tolhuin", false);
   prefs.putUShort("cfgv", (uint16_t)sizeof(EnvCfg));
+  prefs.putUChar("tcnt", (uint8_t)T_COUNT);  // también versiona el orden del enum Timbre
   char key[8];
   for (uint8_t t = 0; t < T_COUNT; t++) {
     EnvCfg e; synthEnvGet(t, &e);
@@ -160,7 +158,8 @@ static void nvsSave() {
   SessCfg ses = { SESS_VER, app.tonic, (uint8_t)app.mode, app.preset, synthTimbre(),
                   app.octaveOffset, app.bpm, app.drumPat, app.arpSlot, app.tremMode,
                   (uint8_t)app.chorus, (uint8_t)app.body, (uint8_t)app.glide,
-                  (uint8_t)app.sustain, (uint8_t)app.subBass, app.joyMap };
+                  (uint8_t)app.sustain, (uint8_t)app.subBass, app.joyMap,
+                  app.voiceLeadMode };
   prefs.putBytes("ses", &ses, sizeof(ses));
   uint32_t k[DRUM_PATTERNS], s[DRUM_PATTERNS], h[DRUM_PATTERNS];
   uint8_t  bd[DRUM_PATTERNS * 2];              // bars[12] + div[12] en un solo blob
@@ -195,15 +194,39 @@ static void nvsSave() {
 static bool nvsLoad() {
   prefs.begin("tolhuin", true);
   bool any = false;
+  // Historial de layouts: 14 (sin HBRASS), 15 (HBRASS), 17 (EPIANO B/C).
+  uint8_t storedTimbres = prefs.getUChar("tcnt", 0);
+  if (storedTimbres == 0) {
+    if      (prefs.isKey("env16")) storedTimbres = 17;
+    else if (prefs.isKey("env14")) storedTimbres = 15;
+    else                           storedTimbres = 14;
+  }
 
-  // TIMBRES: blobs versionados por cfgv=sizeof(EnvCfg) (si el struct cambió,
-  // se descartan SOLO los timbres; el resto tiene formato propio y carga igual).
+  // TIMBRES: además del tamaño se valida el orden del enum. Al migrar desde el
+  // layout de 14 slots, 0..7 se conservan, HBRASS (8) queda de fábrica y los
+  // seis USR anteriores se desplazan de 8..13 a 9..14.
   if (prefs.getUShort("cfgv", 0) == (uint16_t)sizeof(EnvCfg)) {
     char key[8];
-    for (uint8_t t = 0; t < T_COUNT; t++) {
-      EnvCfg e;
-      snprintf(key, sizeof(key), "env%u", t);
-      if (prefs.getBytes(key, &e, sizeof(e)) == sizeof(e)) { synthEnvApply(t, e); any = true; }
+    if (storedTimbres == T_COUNT) {
+      for (uint8_t t = 0; t < T_COUNT; t++) {
+        EnvCfg e;
+        snprintf(key, sizeof(key), "env%u", t);
+        if (prefs.getBytes(key, &e, sizeof(e)) == sizeof(e)) { synthEnvApply(t, e); any = true; }
+      }
+    } else if (storedTimbres == 15) {
+      for (uint8_t oldT = 0; oldT < storedTimbres; oldT++) {
+        EnvCfg e;
+        snprintf(key, sizeof(key), "env%u", oldT);
+        uint8_t newT = (oldT <= T_HBRASS) ? oldT : (uint8_t)(oldT + 2);
+        if (prefs.getBytes(key, &e, sizeof(e)) == sizeof(e)) { synthEnvApply(newT, e); any = true; }
+      }
+    } else if (storedTimbres == 14) {
+      for (uint8_t oldT = 0; oldT < storedTimbres; oldT++) {
+        EnvCfg e;
+        snprintf(key, sizeof(key), "env%u", oldT);
+        uint8_t newT = (oldT < T_HBRASS) ? oldT : (uint8_t)(oldT + 3);
+        if (prefs.getBytes(key, &e, sizeof(e)) == sizeof(e)) { synthEnvApply(newT, e); any = true; }
+      }
     }
   }
 
@@ -249,8 +272,18 @@ static bool nvsLoad() {
   // SESIÓN del intérprete -> app (los toggles/timbre los APLICA el .ino al
   // terminar el arranque; acá sólo se restauran los datos).
   {
+    // Migración compatible: v3 y v4 comparten sizeof (18 B: el padding del
+    // uint16_t iguala ambos). Se distingue por el campo `ver`, NO por longitud.
+    // En v3 el byte que hoy ocupa `voiceLead` es padding basura -> se fuerza
+    // VL_SMOOTH (nunca se interpreta un byte viejo como un modo válido); el
+    // resto de la sesión v3 se preserva.
     SessCfg s;
-    if (prefs.getBytes("ses", &s, sizeof(s)) == sizeof(s) && s.ver == SESS_VER) {
+    memset(&s, 0, sizeof(s));
+    s.voiceLead = VL_SMOOTH;
+    bool okSes = (prefs.getBytes("ses", &s, sizeof(s)) == sizeof(s) &&
+                  (s.ver == 3 || s.ver == 4));
+    if (s.ver != 4) s.voiceLead = VL_SMOOTH;   // v3 (o campo ausente): por defecto
+    if (okSes) {
       app.tonic = s.tonic % 12;
       app.mode  = (Mode)(s.mode % 2);
       app.preset = s.preset % HP_COUNT;
@@ -263,7 +296,13 @@ static bool nvsLoad() {
       app.glide = s.glide != 0;    app.sustain = s.sustain != 0;
       app.subBass = s.subBass != 0;
       app.joyMap = s.joyMap % JM_COUNT;
-      gSessTimbre = s.timbre % T_COUNT;
+      // Fuera de rango o campo ausente -> VL_SMOOTH (clamp, NUNCA módulo: un byte
+      // corrupto/viejo no debe reinterpretarse como un modo válido).
+      app.voiceLeadMode = harmonyVoiceLeadNorm((int)s.voiceLead);
+      uint8_t st = s.timbre;
+      if      (storedTimbres == 15 && st >  T_HBRASS) st += 2;
+      else if (storedTimbres == 14 && st >= T_HBRASS) st += 3;
+      gSessTimbre = st % T_COUNT;
       any = true;
     }
   }
@@ -303,7 +342,7 @@ static void cmdSetEnv(char* args) {
     *eq = 0;
     float v = (float)atof(eq + 1);
     if (strcmp(tok, "perc") == 0)   { e.perc = (v != 0.0f); continue; }
-    if (strcmp(tok, "family") == 0) { e.family = (uint8_t)((int)v % T_USER1); continue; }
+    if (strcmp(tok, "family") == 0) { e.family = (uint8_t)((int)v % T_ENGINE_COUNT); continue; }
     for (int i = 0; i < ENV_NFIELDS; i++) {
       if (strcmp(tok, ENV_FIELDS[i].key) == 0) {
         e.*(ENV_FIELDS[i].mem) = ENV_FIELDS[i].inMs ? msToInc(v) : v;
@@ -326,11 +365,11 @@ static int parseFloats(char* args, float* v, int max) {
 // #state -> estado global (para que el editor sincronice su UI al conectar).
 static void cmdState() {
   outf("{\"cmd\":\"state\",\"timbre\":%u,\"tonic\":%u,\"mode\":%u,\"preset\":%u,"
-       "\"voicing\":%u,\"octave\":%d,\"bpm\":%u,\"chorus\":%d,\"body\":%d,"
+       "\"voicing\":%u,\"lead\":%u,\"octave\":%d,\"bpm\":%u,\"chorus\":%d,\"body\":%d,"
        "\"glide\":%d,\"sustain\":%d,\"mono\":%d,\"drums\":%u,\"trem\":%u,"
        "\"arp\":%u,\"arpslot\":%u,\"subbass\":%d}\n",
        synthTimbre(), app.tonic, (unsigned)app.mode, app.preset,
-       (unsigned)app.voicing, (int)app.octaveOffset, app.bpm,
+       (unsigned)app.voicing, (unsigned)app.voiceLeadMode, (int)app.octaveOffset, app.bpm,
        app.chorus ? 1 : 0, app.body ? 1 : 0, app.glide ? 1 : 0,
        app.sustain ? 1 : 0, app.mono ? 1 : 0,
        (unsigned)(app.drumsOn ? app.drumPat : 0), app.tremMode,
@@ -366,21 +405,34 @@ static void cmdDegree(char* args) {
     return;
   }
 
-  n = harmonyVoiceLead(notes, n);
-  n = harmonyApplyVoicing(notes, n, app.voicing);
-  n = harmonyApplyOctave(notes, n, app.octaveOffset);
+  // Pipeline ÚNICO compartido con el firmware físico (harmonyBuildVoiced): usa
+  // joyMap + chordQual + voiceLeadMode + voicing + octava -> MISMAS notas que
+  // playCurrent para el mismo estado. (Antes divergía: preset + SMOOTH histórico.)
+  n = harmonyBuildVoiced(deg, zone, app.tonic, app.mode, app.preset,
+                         app.chordQual[deg % 7], app.joyMap,
+                         (VoiceLeadMode)app.voiceLeadMode, app.voicing,
+                         app.octaveOffset, notes);
   synthPlaySet(notes, n);
 
   uint8_t bt[MAX_CHORD_NOTES];                      // bajo dedicado (como playCurrent)
-  harmonyChord(deg, CZ_CENTER, app.tonic, app.mode, bt);
+  int bd = (app.bassDegree >= 0) ? app.bassDegree : (int)deg;
+  harmonyChord((uint8_t)bd, CZ_CENTER, app.tonic, app.mode, bt);
   int bass = (int)bt[0] + 12 * app.octaveOffset;
   while (bass > 47)      bass -= 12;
   while (bass < MIDI_LO) bass += 12;
-  synthSetBass(bass, app.subBass ? (uint8_t)T_SINE : synthTimbre());
+  uint8_t chordTimbre = synthTimbre();
+  uint8_t bassTimbre = app.subBass
+      ? (chordTimbre == T_HBRASS ? (uint8_t)T_HBRASS : (uint8_t)T_SINE)
+      : chordTimbre;
+  synthSetBass(bass, bassTimbre);
 
+  // Símbolo joy-aware + campos extra para el visualizador: `lead` (algoritmo) y
+  // `bass` (voz dedicada, separada del acorde principal).
   char sym[16];
-  harmonyChordSymbol(deg, zone, app.tonic, app.mode, app.preset, sym, sizeof(sym));
-  outf("{\"cmd\":\"chord\",\"deg\":%d,\"zone\":%d,\"sym\":\"%s\",\"notes\":[", d, z, sym);
+  harmonyChordSymbolJoy(deg, zone, app.tonic, app.mode, app.preset,
+                        app.chordQual[deg % 7], app.joyMap, sym, sizeof(sym));
+  outf("{\"cmd\":\"chord\",\"deg\":%d,\"zone\":%d,\"sym\":\"%s\",\"lead\":%u,\"bass\":%d,\"notes\":[",
+       d, z, sym, (unsigned)app.voiceLeadMode, bass);
   for (uint8_t i = 0; i < n; i++) outf("%s%u", i ? "," : "", notes[i]);
   outf("]}\n");
 }
@@ -551,6 +603,15 @@ static void processLine(char* line) {
     app.preset = (uint8_t)p;
     printOk();
   }
+  else if (strcmp(cmd, "lead") == 0) {                   // conducción de voces (VoiceLeadMode)
+    int v = args ? atoi(args) : -1;
+    if (v < 0 || v >= VL_COUNT) { printErr("lead"); return; }  // inválido -> error, no se aplica
+    app.voiceLeadMode = (uint8_t)v;
+    harmonyVoiceLeadReset();                             // cambiar de algoritmo reinicia el historial
+    // No re-dispara audio acá (el visualizador re-emite #degree para rehacer el
+    // acorde); confirma el valor EFECTIVO aplicado para que la web no lo asuma.
+    outf("{\"ok\":1,\"lead\":%u}\n", (unsigned)app.voiceLeadMode);
+  }
   // --- Efectos (sincronizan el estado del menú físico donde existe el flag) ---
   else if (strcmp(cmd, "chorus") == 0) {
     float v[4] = { 0, 0.7f, 7.0f, 0.4f };
@@ -570,6 +631,12 @@ static void processLine(char* line) {
     float v[3];
     if (!args || parseFloats(args, v, 3) < 3) { printErr("args"); return; }
     synthDelaySet(v[0], v[1], v[2]);
+    printOk();
+  }
+  else if (strcmp(cmd, "fxmode") == 0) {
+    int mode = args ? atoi(args) : -1;
+    if (mode < 0 || mode > 2) { printErr("args"); return; }
+    dspSetFxMode((uint8_t)mode);
     printOk();
   }
   else if (strcmp(cmd, "trem") == 0) {
@@ -611,6 +678,15 @@ static void processLine(char* line) {
   else if (strcmp(cmd, "noteoff") == 0) { if (args) { synthNoteOff((uint8_t)atoi(args)); printOk(); } }
   else if (strcmp(cmd, "chord") == 0)   { if (args) cmdChord(args); else printErr("args"); }
   else if (strcmp(cmd, "chordoff") == 0) { synthReleaseAll(); printOk(); }
+  else if (strcmp(cmd, "perf") == 0) {
+    bool reset = args && strcmp(args, "reset") == 0;
+    uint32_t maxUs = 0, late = 0;
+    synthPerfStats(&maxUs, &late, reset);
+    outf("{\"cmd\":\"perf\",\"maxUs\":%lu,\"lateBlocks\":%lu,\"budgetUs\":%lu,\"voices\":%d,\"reset\":%d}\n",
+         (unsigned long)maxUs, (unsigned long)late,
+         (unsigned long)((1000000ULL * AUDIO_BLOCK) / SAMPLE_RATE),
+         dspActiveVoices(), reset ? 1 : 0);
+  }
   else if (strcmp(cmd, "save") == 0) {
     nvsSave();
     // Eco de confirmación: la web lo usa para marcar "guardado ✓" sin ambigüedad.

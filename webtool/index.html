@@ -139,8 +139,22 @@
     <div class="params" id="grpFm"></div>
 
     <h2>Audición</h2>
+    <div class="row" style="margin-bottom:6px">
+      <label class="note">CONDUCCIÓN de voces (independiente del voicing):</label>
+      <span id="leadBtns"></span>
+    </div>
     <div class="row" id="degreeBtns">
       <span class="note">mantené apretado un grado:</span>
+    </div>
+    <!-- Visualizador de acorde: notas MIDI finales de #degree, roles y movimiento -->
+    <div class="row" style="margin-top:10px; align-items:flex-start; gap:14px; flex-wrap:wrap">
+      <svg id="chordViz" width="380" height="210"
+           style="background:#0d0f13; border:1px solid #263042; border-radius:6px"></svg>
+      <div style="min-width:170px">
+        <div id="chordSym" class="note" style="font-size:16px; color:#cfe">—</div>
+        <div id="chordList" class="note" style="font-family:monospace; white-space:pre; line-height:1.4"></div>
+        <button id="clearViz" style="margin-top:8px">Limpiar historial visual</button>
+      </div>
     </div>
     <div class="row" style="margin-top:10px">
       <label class="note"><input type="checkbox" id="subBass"> SUB-BAJO sine dedicado
@@ -338,6 +352,7 @@ function feedLine(line) {
   if (line[0] !== "{") { log(line); return; }        // logs del firmware
   let obj;
   try { obj = JSON.parse(line); } catch { log(line); return; }
+  if (obj.cmd === "chord") onChordResponse(obj);       // visualizador de acorde
   const i = pendings.findIndex(p => p.match(obj));
   if (i >= 0) {
     const p = pendings.splice(i, 1)[0];
@@ -519,6 +534,7 @@ async function hello() {
   await loadArpSlot(curArp);
   const st = await reqCmd("#state", "state");         // sincroniza flags globales
   if (st && st.subbass !== undefined) $("subBass").checked = !!st.subbass;
+  if (st && st.lead !== undefined) { leadCur = st.lead; renderLeadSel(); }  // CONDUCCIÓN
   dirty = false; updateSaveStatus();
 }
 
@@ -631,13 +647,117 @@ $("btnFactory").onclick = async () => {
 };
 
 // Audición por grados (misma armonía diatónica que los botones físicos).
+let lastDegree = null;                 // último grado auditado (para re-emitir al cambiar LEAD)
 for (let d = 1; d <= 7; d++) {
   const b = document.createElement("button");
   b.textContent = ["I", "II", "III", "IV", "V", "VI", "VII"][d - 1];
-  b.onpointerdown = () => send("#degree " + d + " 0");
+  b.onpointerdown = () => { lastDegree = d; send("#degree " + d + " 0"); };
   b.onpointerup = b.onpointerleave = () => send("#chordoff");
   $("degreeBtns").appendChild(b);
 }
+
+// ------------------------------------------------------- CONDUCCIÓN (LEAD) --
+// Parámetro INDEPENDIENTE del voicing. Se sincroniza con el firmware: se lee de
+// #state, se envía con #lead n y sólo se refleja el valor cuando la placa
+// confirma {"ok":1,"lead":<v>} (no se asume éxito antes de la respuesta).
+const LEAD_NAMES = ["PAR", "SUAVE", "CORAL", "CONTRA"];
+let leadCur = 1;                       // VL_SMOOTH por defecto
+function renderLeadSel() {
+  [...$("leadBtns").children].forEach((b, i) => {
+    b.style.fontWeight = (i === leadCur) ? "700" : "400";
+    b.style.background  = (i === leadCur) ? "#2b6cb0" : "";
+    b.style.color       = (i === leadCur) ? "#fff" : "";
+  });
+}
+function buildLeadUI() {
+  const box = $("leadBtns"); box.innerHTML = "";
+  LEAD_NAMES.forEach((nm, i) => {
+    const b = document.createElement("button");
+    b.textContent = nm; b.style.marginLeft = "4px";
+    b.onclick = async () => {
+      const r = await reqOk("#lead " + i);             // espera confirmación de la placa
+      if (r && r.lead !== undefined) {                 // valor EFECTIVO aplicado
+        leadCur = r.lead; renderLeadSel();
+        if (lastDegree) send("#degree " + lastDegree + " 0");  // re-emite -> nuevo voicing
+      }
+    };
+    box.appendChild(b);
+  });
+  renderLeadSel();
+}
+buildLeadUI();
+
+// ------------------------------------------------ VISUALIZADOR DE ACORDE ----
+// Pinta las notas MIDI FINALES devueltas por #degree (acorde + bajo dedicado),
+// con nombre/número/rol, ordenadas por altura, y el MOVIMIENTO respecto del
+// acorde visual anterior (líneas prev->actual). Si cambia n, no inventa
+// correspondencias: muestra entradas/salidas.
+const NOTE_NN = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+const midiNm = (m) => NOTE_NN[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 1);
+let vizPrev = null;                    // { chord:[midi asc], bass:int }
+const VZ_W = 380, VZ_H = 210, VZ_LO = 36, VZ_HI = 96;
+const vzY = (m) => VZ_H - 12 - (Math.max(VZ_LO, Math.min(VZ_HI, m)) - VZ_LO) / (VZ_HI - VZ_LO) * (VZ_H - 24);
+const XP = 150, XC = 300;              // columnas: anterior / actual
+
+function svgEl(tag, attrs) {
+  const e = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  return e;
+}
+function vzNode(svg, x, m, role, faded) {
+  const y = vzY(m), col = role === "bass" ? "#e0a020" : "#49b0ff";
+  const op = faded ? 0.35 : 1;
+  if (role === "bass")
+    svg.appendChild(svgEl("rect", { x: x-6, y: y-6, width:12, height:12, fill:col, opacity:op }));
+  else
+    svg.appendChild(svgEl("circle", { cx:x, cy:y, r:6, fill:col, opacity:op }));
+  if (!faded) {
+    const t = svgEl("text", { x: x+10, y: y+4, fill:"#ccd", "font-size":"11", "font-family":"monospace" });
+    t.textContent = midiNm(m) + " " + m;
+    svg.appendChild(t);
+  }
+}
+function vzLine(svg, m0, m1, x0, x1) {
+  const dir = m1 > m0 ? "#5fd07a" : (m1 < m0 ? "#e0605f" : "#889");   // sube/baja/igual
+  svg.appendChild(svgEl("line", { x1:x0, y1:vzY(m0), x2:x1, y2:vzY(m1), stroke:dir, "stroke-width":2, opacity:0.8 }));
+}
+function onChordResponse(obj) {
+  if (obj.lead !== undefined) { leadCur = obj.lead; renderLeadSel(); }   // reflejo externo
+  const chord = (obj.notes || []).slice().sort((a,b)=>a-b);
+  const bass  = (obj.bass !== undefined) ? obj.bass : null;
+  const svg = $("chordViz"); svg.innerHTML = "";
+  // ejes/columnas
+  svg.appendChild(svgEl("line", { x1:XP, y1:6, x2:XP, y2:VZ_H-6, stroke:"#223", "stroke-width":1 }));
+  svg.appendChild(svgEl("line", { x1:XC, y1:6, x2:XC, y2:VZ_H-6, stroke:"#334", "stroke-width":1 }));
+  const lab = (x, s) => { const t = svgEl("text",{x:x-14,y:16,fill:"#667","font-size":"10"}); t.textContent=s; svg.appendChild(t); };
+  lab(XP, "previo"); lab(XC, "actual");
+
+  // MOVIMIENTO del acorde: identidad por posición SÓLO si n se mantiene.
+  if (vizPrev) {
+    vizPrev.chord.forEach(m => vzNode(svg, XP, m, "chord", true));
+    if (vizPrev.bass !== null) vzNode(svg, XP, vizPrev.bass, "bass", true);
+    if (vizPrev.chord.length === chord.length)
+      for (let i = 0; i < chord.length; i++) vzLine(svg, vizPrev.chord[i], chord[i], XP, XC);
+    else {                                          // n cambió: sin correspondencia inventada
+      const t = svgEl("text",{x:XP-6,y:VZ_H-2,fill:"#c86","font-size":"10"});
+      t.textContent = "n cambió: entradas/salidas"; svg.appendChild(t);
+    }
+    if (vizPrev.bass !== null && bass !== null) vzLine(svg, vizPrev.bass, bass, XP, XC);
+  }
+  // acorde actual (roles: bajo dedicado distinto del acorde)
+  chord.forEach(m => vzNode(svg, XC, m, "chord", false));
+  if (bass !== null) vzNode(svg, XC, bass, "bass", false);
+
+  // lectura de texto: símbolo + notas con rol
+  $("chordSym").textContent = (obj.sym || "?") + "   [" + LEAD_NAMES[leadCur] + "]";
+  let txt = "";
+  if (bass !== null) txt += "bajo  " + midiNm(bass).padEnd(4) + " " + String(bass).padStart(3) + "\n";
+  chord.slice().reverse().forEach(m => { txt += "voz   " + midiNm(m).padEnd(4) + " " + String(m).padStart(3) + "\n"; });
+  $("chordList").textContent = txt;
+
+  vizPrev = { chord, bass };                         // memoria local para el próximo
+}
+$("clearViz").onclick = () => { vizPrev = null; $("chordViz").innerHTML = ""; $("chordList").textContent = ""; $("chordSym").textContent = "—"; };
 // Sub-bajo global (estilo HiChord). No persiste hasta «Guardar en NVS».
 $("subBass").addEventListener("change", () => send("#subbass " + ($("subBass").checked ? 1 : 0)));
 

@@ -1,7 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
-// TOLHUIN Chord.  Copyright (C) 2026 Mauro Restivo.
-// Distribuido bajo GPL-3.0-or-later; ver el archivo LICENSE.
-
 /* ============================================================================
    boot_zoom.h  -  Frames del zoom de arranque (GENERADO por tools/gen_boot_zoom.py,
    NO editar a mano). 9 bitmaps 128x64 MONO_HLSB: Argentina completa (con Malvinas)

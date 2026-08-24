@@ -1,7 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
-// TOLHUIN Chord.  Copyright (C) 2026 Mauro Restivo.
-// Distribuido bajo GPL-3.0-or-later; ver el archivo LICENSE.
-
 /* ============================================================================
    oled.cpp  -  Pantalla de estado (SSD1306 128x64, I2C). Capa de hardware.
    Layout v5 — DOS COLUMNAS (scope protagonista):
@@ -56,8 +52,18 @@ static void printLeft(const char* s, int x, int baselineY, const GFXfont* font) 
 bool oledInit() {
   Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
   Wire.setClock(400000);          // I2C rápido: refresco fluido para la animación del VU
-  ok = oled.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR_A);
-  if (!ok) ok = oled.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR_B);
+  // Sondeo por ACK ANTES de begin(): la librería devuelve true aunque no haya
+  // panel (sólo falla si no puede reservar el buffer), y sin esto un armado SIN
+  // OLED dibujaría cada cuadro contra el vacío. Así `ok` queda en false y todas
+  // las funciones de dibujo salen por su guarda.
+  uint8_t addr = 0;
+  Wire.beginTransmission(OLED_ADDR_A);
+  if (Wire.endTransmission() == 0) addr = OLED_ADDR_A;
+  if (!addr) {
+    Wire.beginTransmission(OLED_ADDR_B);
+    if (Wire.endTransmission() == 0) addr = OLED_ADDR_B;
+  }
+  ok = addr && oled.begin(SSD1306_SWITCHCAPVCC, addr);
   if (ok) {
     oled.clearDisplay();
     oled.setTextColor(SSD1306_WHITE);
@@ -68,35 +74,71 @@ bool oledInit() {
   return ok;
 }
 
-// Tarjeta de acorde v5: caja blanca redondeada en la esquina sup-izq, ancho
-// "justo lo necesario" (acotado a maxW) y la letra CENTRADA dentro. Elige la
-// fuente para que entre: FreeSansBold9pt -> default x2 -> default x1 (nombres
-// largos con slash). Alto fijo 20 px.
-static void drawChordCard(const char* sym, int maxW) {
-  const int Hc = 20;
+// Parte un cifrado largo en dos para mostrarlo en dos líneas SIN achicar:
+//   - con slash ("Am7/G")  -> "Am7" + "/G"  (acorde / bajo)
+//   - sin slash ("C#madd9") -> "C#" + "madd9" (raíz+alteración / calidad)
+static void splitChordSym(const char* sym, char* a, char* b) {
+  const char* slash = strchr(sym, '/');
+  if (slash) {
+    int na = (int)(slash - sym); if (na > 18) na = 18;
+    memcpy(a, sym, na); a[na] = 0;
+    strncpy(b, slash, 18); b[18] = 0;            // "/bajo"
+    return;
+  }
+  int i = 1;                                     // 1ra letra = raíz; suma '#'/'b' de alteración
+  while (sym[i] == '#' || sym[i] == 'b') i++;
+  if (i > 18) i = 18;
+  memcpy(a, sym, i); a[i] = 0;
+  strncpy(b, sym + i, 18); b[18] = 0;            // calidad (m7b5, maj9, add9, ...)
+}
+
+// Dibuja UNA línea del cifrado centrada en `cardW`, con la fuente MÁS GRANDE que
+// entre: FreeSansBold9pt; si no entra, cae a la default x1 (chica pero legible y
+// completa). `cy` es el centro vertical de la línea.
+static void drawCardLine(const char* s, int cardW, int cy) {
+  int16_t x1, y1; uint16_t w, h;
+  oled.setTextSize(1); oled.setFont(&FreeSansBold9pt7b);
+  oled.getTextBounds(s, 0, 0, &x1, &y1, &w, &h);
+  oled.setFont(NULL);
+  if ((int)w <= cardW - 4) {                     // 9pt (baseline ~cy+5, alto ~13)
+    int bx = (cardW - (int)w) / 2 - x1; if (bx < 1) bx = 1;
+    printLeft(s, bx, cy + 5, &FreeSansBold9pt7b);
+  } else {                                        // default x1 (cursor arriba-izq)
+    int tw = (int)strlen(s) * 6, bx = (cardW - tw) / 2; if (bx < 1) bx = 1;
+    oled.setFont(NULL); oled.setTextSize(1);
+    oled.setCursor(bx, cy - 3); oled.print(s);
+  }
+}
+
+// Tarjeta de acorde v5.1: caja blanca en la esquina sup-izq. Si el cifrado entra
+// en UNA línea a 9pt, va grande y la caja se ajusta al texto. Si NO entra (add9,
+// m7b5, slash...), pasa a DOS líneas (raíz/calidad o acorde/bajo) para que quede
+// legible y ningún cifrado se recorte. Devuelve el ALTO usado (para los iconos).
+static int drawChordCard(const char* sym, int maxW) {
   int16_t x1, y1; uint16_t w, h;
   oled.setTextSize(1); oled.setFont(&FreeSansBold9pt7b);
   oled.getTextBounds(sym, 0, 0, &x1, &y1, &w, &h);
   oled.setFont(NULL);
-  int len = (int)strlen(sym);
-  int fitMode, textW;
-  if      ((int)w <= maxW - 4)   { fitMode = 0; textW = (int)w; }      // FreeFont 9pt
-  else if (len * 12 <= maxW - 2) { fitMode = 2; textW = len * 12; }    // default x2
-  else                           { fitMode = 1; textW = len * 6;  }    // default x1
-  int cardW = textW + 6; if (cardW > maxW) cardW = maxW; if (cardW < 16) cardW = 16;
-  oled.fillRoundRect(0, 0, cardW, Hc, 3, SSD1306_WHITE);
-  oled.setTextColor(SSD1306_BLACK);
-  if (fitMode == 0) {                                   // FreeFont: baseline en y=15
-    int bx = (cardW - (int)w) / 2 - x1; if (bx < 1) bx = 1;
-    printLeft(sym, bx, 15, &FreeSansBold9pt7b);
-  } else {                                              // default: cursor arriba-izq
-    int chh = (fitMode == 2) ? 16 : 8;
-    int bx = (cardW - textW) / 2; if (bx < 1) bx = 1;
-    oled.setFont(NULL); oled.setTextSize(fitMode);
-    oled.setCursor(bx, (Hc - chh) / 2); oled.print(sym);
-    oled.setTextSize(1);
+
+  if ((int)w <= maxW - 4) {                       // UNA línea grande (cifrado corto)
+    const int Hc = 20;
+    int cardW = (int)w + 8; if (cardW > maxW) cardW = maxW; if (cardW < 16) cardW = 16;
+    oled.fillRoundRect(0, 0, cardW, Hc, 3, SSD1306_WHITE);
+    oled.setTextColor(SSD1306_BLACK);
+    drawCardLine(sym, cardW, 10);                 // baseline ~15 (centrado en 20)
+    oled.setTextColor(SSD1306_WHITE);
+    return Hc;
   }
+
+  char a[20], b[20];                              // DOS líneas (cifrado largo)
+  splitChordSym(sym, a, b);
+  const int Hc = 28;                              // dos renglones de 9pt en la zona visible
+  oled.fillRoundRect(0, 0, maxW, Hc, 3, SSD1306_WHITE);
+  oled.setTextColor(SSD1306_BLACK);
+  drawCardLine(a, maxW, 9);                        // línea 1: baseline ~14 (top en y=1, visible)
+  drawCardLine(b, maxW, 22);                       // línea 2: baseline ~27
   oled.setTextColor(SSD1306_WHITE);
+  return Hc;
 }
 
 // Osciloscopio v5 en modo XY (Lissajous) — "ovillo de UN período": estima el
@@ -181,10 +223,10 @@ void oledRender(const AppState& app, const char* timbre, bool bleConnected,
   oled.clearDisplay();
   oled.setTextColor(SSD1306_WHITE);
   int st = evloopState();
-  const int SX = 48;                       // el marco del scope arranca en x=48
+  const int SX = 50;                       // el marco del scope arranca en x=50
 
-  // === IZQUIERDA — tarjeta de acorde (arriba) =================================
-  drawChordCard(sym, SX - 2);
+  // === IZQUIERDA — tarjeta de acorde (arriba); devuelve su alto (1 o 2 líneas) =
+  int cardH = drawChordCard(sym, SX - 2);
 
   // === IZQUIERDA — iconos DINÁMICOS (solo funciones activas) ==================
   // Núcleo (visible mientras esté activo): REC, PLAY, DRUMS, ARP, HOLD, MONO.
@@ -211,7 +253,7 @@ void oledRender(const AppState& app, const char* timbre, bool bleConnected,
 
     for (int i = 0; i < nic; i++) {
       int x = 3 + (i & 1) * 15;            // 2 columnas: x=3 y x=18
-      int y = 23 + (i >> 1) * 13;          // filas de 13 px bajo la tarjeta
+      int y = (cardH + 3) + (i >> 1) * 13; // filas de 13 px bajo la tarjeta (sigue su alto)
       if (y + IC_STATE_H > 63) break;      // no pintar fuera de pantalla
       oled.drawBitmap(x, y, ic[i], IC_STATE_W, IC_STATE_H, SSD1306_WHITE);
     }

@@ -1,7 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
-// TOLHUIN Chord.  Copyright (C) 2026 Mauro Restivo.
-// Distribuido bajo GPL-3.0-or-later; ver el archivo LICENSE.
-
 #pragma once
 #include "state.h"   // ColorZone, Voicing, Mode
 #include "config.h"  // MAX_CHORD_NOTES
@@ -57,17 +53,47 @@ uint8_t harmonyArpSequence(const uint8_t* notes, uint8_t n, uint8_t octaves,
                            bool scaleRun, uint8_t tonic, Mode mode,
                            uint8_t* out, uint8_t cap);
 
-// Reinicia el historial de voice-leading (llamar al cambiar tonalidad).
+// Reinicia el historial de voice-leading (llamar al cambiar tonalidad, modo o
+// algoritmo de conducción). Borra la memoria de voces del acorde anterior.
 void harmonyVoiceLeadReset();
 
 // Aplica voice-leading a `notes[0..n-1]` in-place: mantiene las voces
 // dentro del registro MIDI_LO..MIDI_HI y minimiza el salto del bajo.
 // Devuelve la cantidad de notas (puede ser igual a n o menor en borde).
+// Es el WRAPPER de compatibilidad de VL_SMOOTH: idéntico al comportamiento
+// histórico. Equivale a harmonyVoiceLeadMode(notes, n, notes[0]%12, VL_SMOOTH).
 uint8_t harmonyVoiceLead(uint8_t* notes, uint8_t n);
+
+// Conducción de voces con ALGORITMO seleccionable (parámetro independiente del
+// voicing). `rootPc` es la clase de altura de la fundamental del acorde (0-11),
+// usada por PARALLEL (fundamental al bajo) y CHORALE/CONTRARY (preferencia de
+// bajo). Aplica in-place, mantiene las notas en MIDI 36..91 (antes de la octava
+// global) y es determinista. El historial se reinicia solo al cambiar de `mode`
+// (nunca se mezcla entre algoritmos). Devuelve la cantidad de notas.
+uint8_t harmonyVoiceLeadMode(uint8_t* notes, uint8_t n, uint8_t rootPc,
+                             VoiceLeadMode mode);
 
 // Transpone todas las notas por `octave` octavas (12 semitonos c/u), in-place.
 // Clamp a MIDI 0..127. Devuelve n. (Octava global -1..+2 del AppState.)
 uint8_t harmonyApplyOctave(uint8_t* notes, uint8_t n, int8_t octave);
+
+// Pipeline ÚNICO de construcción del acorde VOZADO (sin el bajo dedicado). Lo
+// usan el firmware físico (playCurrent) y la audición web (#degree) para producir
+// EXACTAMENTE las mismas notas. Orden fijo: harmonyChordJoy -> rootPc capturado
+// ANTES de reordenar -> harmonyVoiceLeadMode(lead) -> harmonyApplyVoicing ->
+// harmonyApplyOctave. Devuelve n. (El camino ARP y el bajo dedicado van aparte.)
+uint8_t harmonyBuildVoiced(uint8_t deg, ColorZone zone, uint8_t tonic, Mode mode,
+                           uint8_t preset, uint8_t qual, uint8_t joyMap,
+                           VoiceLeadMode lead, Voicing voicing, int8_t octave,
+                           uint8_t* notes);
+
+// Normaliza un VoiceLeadMode potencialmente inválido (persistencia corrupta o de
+// una versión anterior) a un valor SEGURO: cualquier cosa fuera de [0, VL_COUNT)
+// -> VL_SMOOTH. NO usar módulo con datos persistidos: enmascararía la corrupción
+// (un byte viejo NO debe reinterpretarse como un modo válido por azar).
+static inline uint8_t harmonyVoiceLeadNorm(int v) {
+    return (v >= 0 && v < VL_COUNT) ? (uint8_t)v : (uint8_t)VL_SMOOTH;
+}
 
 // Reordena las voces según `v` (inversiones / abierta), in-place. Conserva las
 // clases de altura del acorde; sólo cambia octavas de algunas voces. Devuelve n.

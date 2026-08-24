@@ -1,7 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
-// TOLHUIN Chord.  Copyright (C) 2026 Mauro Restivo.
-// Distribuido bajo GPL-3.0-or-later; ver el archivo LICENSE.
-
 /* ============================================================================
    oled.h  -  Pantalla de estado en OLED SSD1306 128x64 (I2C, comparte bus con
    el ADS del joystick). Muestra tonalidad/modo, acorde actual (con color y

@@ -55,6 +55,17 @@ if (Test-Path $srcD) {
   if ($LASTEXITCODE -ne 0) { $fail = 1 }
 }
 
+# --- test de conducción de voces (voice leading seleccionable) ---
+$srcV = Join-Path $testDir "test_voicelead.cpp"
+$outV = Join-Path $testDir "test_voicelead.exe"
+if (Test-Path $srcV) {
+  Write-Host "`n[test_voicelead]"
+  & $cxx -std=c++17 -I "$root" "$srcV" (Join-Path $root "harmony.cpp") -o "$outV"
+  if ($LASTEXITCODE -ne 0) { Write-Host "ERROR compilando test_voicelead"; exit 1 }
+  & "$outV"
+  if ($LASTEXITCODE -ne 0) { $fail = 1 }
+}
+
 # --- test del looper de eventos ---
 $srcE = Join-Path $testDir "test_evloop.cpp"
 $outE = Join-Path $testDir "test_evloop.exe"

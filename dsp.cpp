@@ -1,7 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
-// TOLHUIN Chord.  Copyright (C) 2026 Mauro Restivo.
-// Distribuido bajo GPL-3.0-or-later; ver el archivo LICENSE.
-
 /* ============================================================================
    dsp.cpp  -  Núcleo de síntesis PURO (sin hardware). Compila en host y ESP32.
    Portado tal cual del motor MVP (ESP_I2S) pero SIN I2S ni FreeRTOS:
@@ -41,7 +37,7 @@
 // deja NULLs silenciosos y el printf("%s", NULL) del #hello REINICIA la placa
 // (pasó al ampliar a 6 USR). El test de host verifica nombres no-nulos.
 static const char* T_NAME[T_COUNT] = { "BRASS", "EPIANO", "STR", "SINE", "TRI", "ORGAN",
-                                       "FLUTE", "WAVE",
+                                       "FLUTE", "WAVE", "HBRASS", "EPIANO B", "EPIANO C",
                                        "USR1", "USR2", "USR3", "USR4", "USR5", "USR6" };
 
 // ----------------------------------------------------------------------------
@@ -59,6 +55,7 @@ struct Voice {
   Adsr    fenv;                    // envolvente de filtro (abre/cierra el cutoff)
   Svf     filt;                    // pasa-bajos por voz (canal L / mono)
   Svf     filtR;                   // pasa-bajos del canal R (sólo STRINGS, ancho estéreo)
+  float   hbLp=0, hbK=0;           // HBRASS E3: LP 1 polo (evita SVF powf/tanf por bloque)
   Lfo     lfo;                     // LFO por voz (vibrato + trémolo)
   float   lfoVal=0;                // valor del LFO en el bloque actual
   float   fmEnv=0;                 // envolvente del índice FM cuerpo (epiano)
@@ -185,9 +182,21 @@ void DelayStereo::processWet(float inMono, float& wetL, float& wetR) {
   wetL = dl * mix;                         // sólo el eco (send)
   wetR = dr * mix;
 }
+void DelayStereo::processWetPingPong(float inL, float inR, float& wetL, float& wetR) {
+  int rL = widx - dL; if (rL < 0) rL += MAXLEN;
+  int rR = widx - dR; if (rR < 0) rR += MAXLEN;
+  float dl = bufL[rL], dr = bufR[rR];
+  fbLpL += 0.62f * (dl - fbLpL);
+  fbLpR += 0.62f * (dr - fbLpR);
+  bufL[widx] = inL + fbLpR * fb;
+  bufR[widx] = inR + fbLpL * fb;
+  if (++widx >= MAXLEN) widx = 0;
+  wetL = dl * mix; wetR = dr * mix;
+}
 void DelayStereo::reset() {
   for (int i = 0; i < MAXLEN; i++) { bufL[i] = 0.0f; bufR[i] = 0.0f; }
   widx = 0;
+  fbLpL = fbLpR = 0.0f;
 }
 
 // ----------------------------------------------------------------------------
@@ -217,15 +226,20 @@ static inline float allpassTick(float* buf, int len, int& idx, float in) {
   if (++idx >= len) idx = 0;
   return out;
 }
-float Reverb::process(float in) {
+void Reverb::processStereo(float in, float& wetL, float& wetR) {
   float x = in * 0.18f;            // ganancia de entrada (evita saturar 4 combs)
-  float out = combTick(c0, C0, i0, s0, x, fb, damp)
-            + combTick(c1, C1, i1, s1, x, fb, damp)
-            + combTick(c2, C2, i2, s2, x, fb, damp)
-            + combTick(c3, C3, i3, s3, x, fb, damp);
-  out = allpassTick(ap0, A0, ai0, out);
-  out = allpassTick(ap1, A1, ai1, out);
-  return out * mix;               // cola húmeda escalada
+  float q0 = combTick(c0, C0, i0, s0, x, fb, damp);
+  float q1 = combTick(c1, C1, i1, s1, x, fb, damp);
+  float q2 = combTick(c2, C2, i2, s2, x, fb, damp);
+  float q3 = combTick(c3, C3, i3, s3, x, fb, damp);
+  float l = q0 + 0.72f*q1 + 0.48f*q2 + 0.28f*q3;
+  float r = 0.28f*q0 + 0.48f*q1 + 0.72f*q2 + q3;
+  wetL = allpassTick(ap0, A0, ai0, l) * mix;
+  wetR = allpassTick(ap1, A1, ai1, r) * mix;
+}
+float Reverb::process(float in) {
+  float l, r; processStereo(in, l, r);
+  return 0.5f * (l + r);
 }
 void Reverb::reset() {
   for (int i = 0; i < C0; i++) c0[i] = 0; for (int i = 0; i < C1; i++) c1[i] = 0;
@@ -248,6 +262,8 @@ static DelayStereo gDelay;   // delay estéreo global (efecto de salida)
 static Reverb      gReverb;  // reverb global (cola difusa antes del delay)
 static Chorus      gChorus;  // chorus estéreo global (engrosa, antes de reverb/delay)
 static bool        gChorusOn = false;
+static uint8_t     gFxMode = 2;           // studio: reverb estéreo + delay ping-pong
+static float       gFxLow = 0.0f;         // low-pass del send: el sub queda seco/centrado
 static bool        gBodyOn = false;     // capa BODY (cuerpo/unísono por offsets de pitch)
 static float       gBodyAmt = 0.0f;     // intensidad 0..1
 
@@ -442,6 +458,14 @@ static void voiceRelease(Voice& v) {
 static inline float msInc(float ms)        { return 1.0f / (ms * SAMPLE_RATE / 1000.0f); }
 static inline float midiToFreq(uint8_t n)  { return 440.0f * powf(2.0f, (n - 69) / 12.0f); }
 static inline float midiToFreqF(float m)   { return 440.0f * powf(2.0f, (m - 69.0f) / 12.0f); }
+static inline float midiToFreqFast(float m) {
+  static const float PC[12] = { 1.0000000f,1.0594631f,1.1224620f,1.1892071f,
+    1.2599210f,1.3348399f,1.4142136f,1.4983071f,1.5874011f,1.6817928f,1.7817974f,1.8877486f };
+  int n = (int)floorf(m); float fr = m - (float)n;
+  if (n < 0) n = 0; if (n > 127) n = 127;
+  float base = 8.1757989f * PC[n % 12] * (float)(1u << (n / 12));
+  return base * (1.0f + fr * 0.0577623f + fr * fr * 0.0017019f);
+}
 static inline float fastSine(float ph)    { ph -= floorf(ph); return sineTab[((int)(ph*1024.0f)) & 1023]; }
 static inline float lpCoef(float fc)      { return 1.0f - expf(-2.0f * PI * fc / SAMPLE_RATE); }
 // Ruido blanco chico (aliento de la flauta). xorshift, no necesita ser fuerte.
@@ -568,8 +592,24 @@ static void envInit() {
   ENV[T_WAVE]    = { 25,  180, 0.80f, 380,        0,         0,    0,
                      4200, 0.9f, 1.4f, 90,  320,  0.55f, 380,      5.0f, 0.0025f, 0.10f,  false };
   ENV[T_WAVE].wtMorph = 1.0f;
+  // HBRASS experimental E2: un saw PolyBLEP + waveshaping cúbico. Reduce el
+  // costo frente a los dos pulses de BRASS sin reservar tablas nuevas.
+  ENV[T_HBRASS]  = { 12, 240,  0.94f, 950,        0,         0,    0,
+                     8200, 0.80f, 0.55f, 3,  90,   0.92f, 160,      5.0f, 0.0006f, 0.02f, false };
+  ENV[T_HBRASS].wtMorph = 0.65f;
+  // Variantes EPIANO seleccionadas en TASK-20260821-002. Reutilizan exactamente
+  // el mismo motor FM; sólo difieren los parámetros, por lo que no agregan costo
+  // por voz ni buffers. El EPIANO original queda intacto.
+  ENV[T_EPIANO_B] = { 4, 2800, 0.0f, 620,        msInc(900), 0.54f, 0.27f,
+                      3900, 0.68f, 1.6f, 1, 200, 0.35f, 220, 4.8f, 0.0004f, 0.09f, true,
+                      msInc(170), 0.16f, 4.01f };
+  ENV[T_EPIANO_C] = { 2, 2500, 0.0f, 700,        msInc(720), 0.58f, 0.23f,
+                      5200, 0.60f, 1.6f, 1, 200, 0.35f, 220, 4.8f, 0.0004f, 0.09f, true,
+                      msInc(230), 0.23f, 6.02f };
   // Familia de oscilador: los timbres base renderizan con su propio motor.
-  for (int t = 0; t < T_USER1; t++) ENV[t].family = (uint8_t)t;
+  for (int t = 0; t < T_ENGINE_COUNT; t++) ENV[t].family = (uint8_t)t;
+  ENV[T_EPIANO_B].family = T_EPIANO;
+  ENV[T_EPIANO_C].family = T_EPIANO;
   // Timbres de USUARIO: nacen como copias editables de la paleta base (puntos de
   // partida musicales; la web les cambia familia y parámetros, y viajan en los
   // paquetes de sonido). Se reparten entre las familias para variar.
@@ -597,6 +637,11 @@ void   dspEnvSet(uint8_t t, const EnvCfg& e) {
   if (t >= T_COUNT) return;
   ENV[t] = e;
   ENV_DEFAULT[t] = e;
+  // El LP económico de HBRASS guarda su coeficiente por voz. Actualizarlo acá
+  // hace que el slider CUTOFF responda sobre el acorde sostenido sin pagar un
+  // expf por voz en cada bloque de audio.
+  for (auto& v : voices)
+    if (v.active && v.timbre == t && v.osc == T_HBRASS) v.hbK = lpCoef(e.cutHz);
 }
 
 // --- Edición de patrones de batería (slots 1..7; el 0 es "off") ---
@@ -667,16 +712,30 @@ void dspRandomizeSound(uint8_t t, uint32_t seed) {
 
 static void voiceSetFreq(Voice& v, float midi);   // (definida tras voiceStart)
 
+// Paneo equipotente precalculado. Evita dos llamadas trigonométricas por voz
+// dentro del bloque de audio justo cuando entra un acorde completo.
+static const float NOTE_PAN_L[12] = {
+  0.997858923f, 0.980785280f, 0.946930129f, 0.896872742f,
+  0.831469612f, 0.751839807f, 0.659345815f, 0.555570233f,
+  0.442288690f, 0.321439465f, 0.195090322f, 0.065403129f
+};
+static const float NOTE_PAN_R[12] = {
+  0.065403129f, 0.195090322f, 0.321439465f, 0.442288690f,
+  0.555570233f, 0.659345815f, 0.751839807f, 0.831469612f,
+  0.896872742f, 0.946930129f, 0.980785280f, 0.997858923f
+};
+
 // keepPhase = true conserva fase/LPF (retrigger legato sin click); false reinicia.
 static void voiceStart(Voice& v, uint8_t note, uint8_t t, bool keepPhase,
                        float vel, int delaySamples) {
   const EnvCfg& e = ENV[t];
   v.active = true; v.note = note; v.timbre = t;
   // Familia de oscilador: los timbres base renderizan con su propio motor; los
-  // slots de usuario despachan por ENV[t].family (clampeada a las 8 familias).
-  v.osc = (t >= T_USER1) ? (uint8_t)(e.family % T_USER1) : t;
+  // Todos los presets despachan por familia. EPIANO B/C reutilizan T_EPIANO y
+  // los slots USR quedan clampeados a los motores DSP reales.
+  v.osc = (uint8_t)(e.family % T_ENGINE_COUNT);
   v.ampScale = vel; v.startDelay = (delaySamples > 0) ? delaySamples : 0;
-  if (!keepPhase) { v.ph0 = v.ph1 = v.ph2 = 0; v.filt.reset(); v.filtR.reset(); v.lfo.reset(); }
+  if (!keepPhase) { v.ph0 = v.ph1 = v.ph2 = 0; v.filt.reset(); v.filtR.reset(); v.hbLp = 0; v.lfo.reset(); }
   v.amp.config(e.atkMs, e.decMs, e.sus, e.relMs, e.perc, (float)SAMPLE_RATE);
   v.amp.noteOn();                       // arranca ataque desde el nivel actual
   // envolvente de filtro: misma forma percusiva que la amplitud por timbre
@@ -685,14 +744,13 @@ static void voiceStart(Voice& v, uint8_t note, uint8_t t, bool keepPhase,
   v.lfo.setRate(e.lfoRate);
   v.fmEnv = 1.0f;
   v.fmEnv2 = 1.0f;
+  v.hbK = lpCoef(e.cutHz);            // HBRASS: cutoff editable, aplicado al próximo note-on
   // Paneo por nota (equipotencia): los acordes se abren en el campo estéreo.
   // Determinístico por nota (misma nota = misma posición) y disperso para
   // decorrelacionar L/R como la referencia premium.
   int h = (note * 5) % 12;                // 0..11 disperso por nota
-  float pan = (h - 5.5f) / 6.0f;          // ~[-0.92, +0.92]
-  float ang = (pan + 1.0f) * 0.25f * PI;  // 0..PI/2
-  v.panL = cosf(ang);
-  v.panR = sinf(ang);
+  v.panL = NOTE_PAN_L[h];
+  v.panR = NOTE_PAN_R[h];
   v.curMidi = v.targMidi = (float)note;
   // BODY: offsets de pitch por voz (cuerpo/unísono). detune fijo = spread de
   // ensamble (cada nota afina un poco distinto); atkPitch = transitorio que se
@@ -702,7 +760,9 @@ static void voiceStart(Voice& v, uint8_t note, uint8_t t, bool keepPhase,
     // ±11 cents de spread estático + blip de ataque de ~1/4 de semitono que se
     // asienta: el efecto "ensamble analógico" ahora se escucha al toggle.
     v.detune   = dspNoise() * 0.11f * gBodyAmt;     // ±11 cents * amt (estático por voz)
-    v.atkPitch = 0.25f * gBodyAmt;                  // blip inicial (~se asienta en blockSetup)
+    // HBRASS E4 conserva el spread estático y delega el movimiento al chorus:
+    // evita recalcular powf por voz/bloque para drift + transitorio de pitch.
+    v.atkPitch = (v.osc == T_HBRASS) ? 0.0f : 0.25f * gBodyAmt;
   } else { v.detune = 0.0f; v.atkPitch = 0.0f; }
   v.drift = 0.0f;
   voiceSetFreq(v, v.curMidi + v.detune + v.atkPitch);
@@ -712,7 +772,7 @@ static void voiceStart(Voice& v, uint8_t note, uint8_t t, bool keepPhase,
 // Permite glide: al deslizar curMidi se recalculan los incrementos por bloque.
 static void voiceSetFreq(Voice& v, float midi) {
   const EnvCfg& e = ENV[v.timbre];
-  float f = midiToFreqF(midi);
+  float f = (v.osc == T_HBRASS) ? midiToFreqFast(midi) : midiToFreqF(midi);
   if (v.osc == T_STRINGS) {                    // 3 saws detuneados
     v.inc0 = f*0.994f/SAMPLE_RATE;
     v.inc1 = f       /SAMPLE_RATE;
@@ -724,7 +784,9 @@ static void voiceSetFreq(Voice& v, float midi) {
   } else if (v.osc == T_BRASS) {               // dos pulsos detuneados
     v.inc0 = f         / SAMPLE_RATE;
     v.inc1 = f*1.0045f / SAMPLE_RATE;
-  } else {                                     // SINE / TRIANGLE / ORGAN: un oscilador
+  } else if (v.osc == T_HBRASS) {              // saw BLEP único + waveshaping barato
+    v.inc0 = f / SAMPLE_RATE;
+  } else {                                     // SINE / TRIANGLE / ORGAN / WAVE
     v.inc0 = f/SAMPLE_RATE;
   }
 }
@@ -735,7 +797,7 @@ static inline void renderVoiceStereo(Voice& v, float& outL, float& outR) {
   const EnvCfg& e = ENV[v.timbre];
   if (v.startDelay > 0) { v.startDelay--; outL = outR = 0.0f; return; }  // micro-retardo (humanización)
   float env = v.amp.process();                    // ----- envolvente ADSR (sin clicks) -----
-  v.fenv.process();                               // avanza la env de filtro (cutoff a tasa de bloque)
+  if (v.osc != T_HBRASS) v.fenv.process();        // HBRASS E3 usa LP fijo de bajo costo
   if (!v.amp.active()) { v.active = false; outL = outR = 0; return; }
   float sc   = 1.0f + e.vib  * v.lfoVal;          // vibrato (pitch); 0 en brass
   float trem = 1.0f + e.trem * v.lfoVal;          // trémolo (amplitud); 0 en brass/epiano
@@ -796,6 +858,18 @@ static inline void renderVoiceStereo(Voice& v, float& outL, float& outR) {
     float fr = x - (float)f0;
     int   ix = ((int)(v.ph0*(float)WT_LEN)) & (WT_LEN - 1);
     s = waveTab[f0][ix] + (waveTab[f0 + 1][ix] - waveTab[f0][ix]) * fr;
+  } else if (v.osc == T_HBRASS) {
+    // E2 optimizado: un saw PolyBLEP (una discontinuidad) y waveshaping cúbico
+    // para recuperar el carácter reedy. Reduce el hot path frente a los cuatro
+    // flancos BLEP de BRASS y conserva el bajo armónico elegido en la variante E.
+    float d0 = v.inc0*sc;
+    v.ph0 += d0; if (v.ph0>=1) v.ph0-=1;
+    float tone = e.wtMorph; if (tone < 0.0f) tone = 0.0f; if (tone > 1.0f) tone = 1.0f;
+    bool low = (v.group == VG_BASS || v.note < 48);
+    bool body = (!low && v.note < 60);
+    float drive = (low ? 0.10f : (body ? 0.18f : 0.24f)) + 0.08f * tone;
+    float saw = dspOscSawBlep(v.ph0, d0);
+    s = (saw - drive * saw * saw * saw) / (1.0f - drive);
   } else {                                        // BRASS: dos pulsos detuneados (HiChord)
     const float PW = 0.32f;                        // ancho reedy (no 50%) = más brillo
     float d0 = v.inc0*sc, d1 = v.inc1*sc;
@@ -803,7 +877,12 @@ static inline void renderVoiceStereo(Voice& v, float& outL, float& outR) {
     v.ph1 += d1; if (v.ph1>=1) v.ph1-=1;
     s = (dspOscPulseBlep(v.ph0, d0, PW) + dspOscPulseBlep(v.ph1, d1, PW)) * 0.5f;
   }
-  s = v.filt.lp(s);                               // pasa-bajos resonante de 2 polos (SVF)
+  if (v.osc == T_HBRASS) {                        // E3: un polo, 2 ops por muestra
+    v.hbLp += v.hbK * (s - v.hbLp);
+    s = v.hbLp;
+  } else {
+    s = v.filt.lp(s);                             // pasa-bajos resonante de 2 polos (SVF)
+  }
   float g = s * env * trem * v.ampScale;
   outL = g * v.panL * 1.4142f;                    // paneo equipotencia (×√2 compensa el centro)
   outR = g * v.panR * 1.4142f;
@@ -879,6 +958,8 @@ void dspInit() {
   gChorus.reset();
   gChorus.setParams(0.6f, 6.0f, 0.4f, (float)SAMPLE_RATE);   // valores por defecto (off hasta activar)
   gChorusOn = false;
+  gFxMode = 2;
+  gFxLow = 0.0f;
   gBodyOn = false; gBodyAmt = 0.0f;
   // Looper: reinicia el estado de reproducción (los buffers los mantiene looperInit).
   for (int i = 0; i < LOOPER_LAYERS; i++) { gLp[i].state = LP_EMPTY; gLp[i].len = 0; gLp[i].pos = 0; }
@@ -939,6 +1020,21 @@ void dspNoteOn(uint8_t note, uint8_t t, float vel, int delaySamples, uint8_t gro
     if (v.active && v.note==note && v.group==group && v.amp.stage!=Adsr::ST_REL) {
       voiceStart(v,note,t,true,vel,delaySamples); v.group = group; return;
     }
+  // HBRASS se diseña para el presupuesto real del S3: máximo 7 voces totales
+  // (roles HiChord + colas). Al llegar al límite roba primero su release más
+  // silencioso en vez de acumular 12 voces que el hardware no puede renderizar.
+  if (t == T_HBRASS) {
+    int hn = 0; for (auto& v : voices) if (v.active && v.osc == T_HBRASS) hn++;
+    if (hn >= 7) {
+      Voice* q = nullptr;
+      for (auto& v : voices)
+        if (v.osc == T_HBRASS && v.amp.stage == Adsr::ST_REL &&
+            (!q || v.amp.level < q->amp.level)) q = &v;
+      if (!q) for (auto& v : voices)
+        if (v.osc == T_HBRASS && (!q || v.amp.level < q->amp.level)) q = &v;
+      if (q) { voiceStart(*q,note,t,true,vel,delaySamples); q->group=group; return; }
+    }
+  }
   // voz libre: arranque limpio (nivel ya en 0)
   for (auto& v : voices)
     if (!v.active) { voiceStart(v,note,t,false,vel,delaySamples); v.group = group; return; }
@@ -988,6 +1084,7 @@ void dspSetSustain(bool on, float relMs) {
 void dspSetReverb(float roomSize, float damping, float mix) {
   gReverb.setParams(roomSize, damping, mix);
 }
+void dspSetFxMode(uint8_t mode) { gFxMode = (mode > 2) ? 2 : mode; }
 
 void dspSetChorus(bool on, float rateHz, float depthMs, float mix) {
   gChorusOn = on;
@@ -1319,7 +1416,7 @@ static void blockSetup(int n) {
     }
     // BODY: transitorio de ataque que se asienta + drift lento (inestabilidad).
     if (v.atkPitch != 0.0f) { v.atkPitch *= 0.82f; if (fabsf(v.atkPitch) < 1e-4f) v.atkPitch = 0.0f; needFreq = true; }
-    if (gBodyOn) {
+    if (gBodyOn && v.osc != T_HBRASS) {
       v.drift += dspNoise() * 0.0018f * gBodyAmt;   // paso del random walk (audible)
       v.drift *= 0.99f;                              // tiende a 0 (no se aleja)
       needFreq = true;
@@ -1329,10 +1426,12 @@ static void blockSetup(int n) {
     }
     if (needFreq) voiceSetFreq(v, v.curMidi + v.detune + v.drift + v.atkPitch);
     v.lfoVal = v.lfo.process(blockDt);              // valor del LFO para todo el bloque
-    float fc = e.cutHz * powf(2.0f, e.fEnvOct * v.fenv.level);
-    v.filt.setCoeffs(fc, e.res, (float)SAMPLE_RATE);
-    if (v.osc == T_STRINGS)                         // canal R de las cuerdas (ancho estéreo)
-      v.filtR.setCoeffs(fc, e.res, (float)SAMPLE_RATE);
+    if (v.osc != T_HBRASS) {
+      float fc = e.cutHz * powf(2.0f, e.fEnvOct * v.fenv.level);
+      v.filt.setCoeffs(fc, e.res, (float)SAMPLE_RATE);
+      if (v.osc == T_STRINGS)                       // canal R de las cuerdas (ancho estéreo)
+        v.filtR.setCoeffs(fc, e.res, (float)SAMPLE_RATE);
+    }
   }
 }
 
@@ -1340,16 +1439,17 @@ static void blockSetup(int n) {
 void dspArpAdvance()           { arpTriggerStep(); }   // avanza un paso AHORA
 void dspArpSetExtSync(bool on) { gArpExtSync = on; }   // true = ignora el reloj interno
 
-// tanh rápido (racional clampeado) para el soft-clip del camino por muestra.
-// El tanhf de libm es software en Xtensa (cientos de ciclos); a 2 llamadas por
-// muestra × 44100 Hz se comía ~10-15% del core y era el empujón que faltaba para
-// el underrun con muchas voces (ruido al terminar/cambiar acordes). Error <1e-3
-// en |x|<=1, saturación monótona a ±1 en |x|>=3: indistinguible como soft-clip.
+// Soft-clip polinómico sin división. En el ESP32-S3 la división float también
+// se resuelve por software; el cociente racional anterior se ejecutaba cinco
+// veces por muestra en estéreo+FX. Esta aproximación de tanh de orden 5 conserva
+// pendiente unitaria cerca de cero y llega suavemente a ±1 en |x|~=1.25.
 static inline float fastTanh(float x) {
-  if (x >  3.0f) return  1.0f;
-  if (x < -3.0f) return -1.0f;
+  if (x >  1.25f) return  1.0f;
+  if (x < -1.25f) return -1.0f;
   float x2 = x * x;
-  return x * (27.0f + x2) / (27.0f + 9.0f * x2);
+  float y = x * (1.0f + x2 * (-0.333333333f + 0.133333333f * x2));
+  if (y > 1.0f) return 1.0f; if (y < -1.0f) return -1.0f;
+  return y;
 }
 
 // Mezcla estéreo seca (sin master): suma de voces en L y R.
@@ -1359,6 +1459,9 @@ static inline void renderMixStereoRaw(float& mixL, float& mixR) {
     if (!v.active) continue;
     float l, r; renderVoiceStereo(v, l, r);
     float g = (v.group == VG_BASS) ? gBassGain : gSynthGain;   // sub-bajo y voces por separado
+    // Variante HBRASS E: el bajo armónico reemplaza al seno a nivel pleno, pero
+    // se atenúa para reforzar 125–250 Hz sin tapar el acorde ni saturar el bus.
+    if (v.group == VG_BASS && v.osc == T_HBRASS) g *= 0.65f;
     mixL += l * g; mixR += r * g;
   }
 }
@@ -1545,9 +1648,9 @@ bool dspDrumsEngine() { return gDrumSamples; }
 // Volumen general de la batería (0..1); escala TODOS los golpes en la mezcla.
 void  dspDrumsSetGain(float g) { if (g < 0.0f) g = 0.0f; if (g > 1.0f) g = 1.0f; gDrumGain = g; }
 float dspDrumsGain()           { return gDrumGain; }
-void  dspSetSynthGain(float g) { if (g < 0.0f) g = 0.0f; if (g > 2.0f) g = 2.0f; gSynthGain = g; }
+void  dspSetSynthGain(float g) { if (g < 0.0f) g = 0.0f; if (g > 1.0f) g = 1.0f; gSynthGain = g; }
 float dspSynthGain()           { return gSynthGain; }
-void  dspSetBassGain(float g)  { if (g < 0.0f) g = 0.0f; if (g > 2.0f) g = 2.0f; gBassGain = g; }
+void  dspSetBassGain(float g)  { if (g < 0.0f) g = 0.0f; if (g > 1.0f) g = 1.0f; gBassGain = g; }
 float dspBassGain()            { return gBassGain; }
 
 // Patrón de batería sincronizado al BPM. pattern 0=off, 1..DRUM_PATTERNS-1.
@@ -1711,10 +1814,23 @@ void DSP_HOT dspRenderStereo(float* outL, float* outR, int n) {
       dryL += cl; dryR += cr;
     }
     float mono = 0.5f * (dryL + dryR);
-    float wet  = gReverb.process(mono);             // cola de reverb (mono)
-    float eL, eR; gDelay.processWet(mono + wet, eL, eR);   // ecos del delay (L≠R)
-    float oL = dryL + wet + eL;
-    float oR = dryR + wet + eR;
+    float rvL, rvR, eL, eR;
+    if (gFxMode == 0) {
+      float wet = gReverb.process(mono);
+      rvL = rvR = wet;
+      gDelay.processWet(mono + wet, eL, eR);
+    } else if (gFxMode == 1) {
+      float wet = gReverb.process(mono);
+      rvL = rvR = wet;
+      gDelay.processWetPingPong(dryL + wet, dryR + wet, eL, eR);
+    } else {
+      gFxLow += 0.020f * (mono - gFxLow);             // ~143 Hz @44.1 kHz
+      float sendL = dryL - gFxLow, sendR = dryR - gFxLow;
+      gReverb.processStereo(0.5f * (sendL + sendR), rvL, rvR);
+      gDelay.processWetPingPong(sendL + rvL, sendR + rvR, eL, eR);
+    }
+    float oL = dryL + rvL + eL;
+    float oR = dryR + rvR + eR;
     if (gTremOn) {                                  // tremolo de salida (sincronizado a BPM)
       float tg = 1.0f - gTremDepth * (0.5f + 0.5f * fastSine(gTremPhase));  // 1-depth .. 1
       oL *= tg; oR *= tg;
@@ -1722,8 +1838,8 @@ void DSP_HOT dspRenderStereo(float* outL, float* outR, int n) {
     }
     float drum = dspDrumTick() * gDrumGain;         // batería: en vivo, seca, NO se graba en el looper
     oL += drum; oR += drum;
-    outL[i] = oL;
-    outR[i] = oR;
+    outL[i] = fastTanh(oL * 0.5f);   // soft-clip final: voces+fx+drums no clippean duro (anti-saturación PAM8403)
+    outR[i] = fastTanh(oR * 0.5f);
   }
 }
 

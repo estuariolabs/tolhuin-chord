@@ -1,7 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
-// TOLHUIN Chord.  Copyright (C) 2026 Mauro Restivo.
-// Distribuido bajo GPL-3.0-or-later; ver el archivo LICENSE.
-
 /* ============================================================================
    webcfg.h  -  Configuración por USB (Web Serial) + persistencia NVS.
    Protocolo de texto por líneas sobre Serial (el mismo CDC del monitor):
@@ -24,9 +20,19 @@
                                     las notas + símbolo del acorde (visualizador)
      #timbre <t>                 -> selecciona el timbre activo
      #key <0..11> / #mode <0|1> / #octave <-1..2> / #voicing <0..3> / #preset <0..3>
+     #lead <0..3>                -> CONDUCCIÓN de voces (VoiceLeadMode: 0=PAR
+                                    paralelo, 1=SUAVE, 2=CORAL, 3=CONTRA).
+                                    Parámetro INDEPENDIENTE de #voicing. Reinicia
+                                    el historial; un valor fuera de rango es error
+                                    (no se aplica). Responde {"ok":1,"lead":<v>}
+                                    con el valor EFECTIVO; el visualizador re-emite
+                                    #degree para rehacer el acorde con el algoritmo
+                                    nuevo. También expuesto en #state (campo "lead").
      #chorus <on> [rate depth mix]   #reverb <room> <damp> <mix>
      #delay <ms> <fb> <mix>          #trem <on> [rate depth]
+     #fxmode <0|1|2>                 # legacy / ping-pong / studio stereo
      #body <on> [amt]                #glide <on> [ms]      #sustain <on> [ms]
+     #perf [reset]                -> maxUs/lateBlocks del audio y presupuesto
      #save / #load               -> persiste / recarga timbres+drums desde NVS
 
    TRANSPORTES: el mismo protocolo viaja por dos vías (como el HiChord, que usa
