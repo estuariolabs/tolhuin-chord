@@ -95,6 +95,7 @@ oled_win      = [24, 13];    // ventana visible (área activa 21.7 x 10.9 + tole
 oled_win_off  = [0, 0];      // MEDIR: corrimiento del área activa respecto del centro de la PCB
 oled_rail_w   = 2.0;
 oled_bite     = 0.9;         // cuánto pisa el riel el borde de la PCB (no tocar el vidrio)
+oled_open_dir = 1;           // lado abierto de los rieles: +1 derecha (por la izquierda choca con la pestaña del panel)
 
 // ---------------------------------------------------------------- Joystick HW-504
 joy_pos       = [col_x, -20];  // eje del stick en el panel
@@ -259,25 +260,25 @@ module key_cutouts() {
 // abierto (-dir) y frena contra el extremo cerrado. Un resalte de 0.35 mm la traba.
 //  c = centro, pcb = [a lo largo del riel, entre rieles], z_top = cara superior PCB
 module slide_rails(c, along, across, pcb_th, z_top, rail_w, bite, axis) {
-    L   = along + 2*fit + 1.5;
+    L   = along + 2*fit + 1.5 + 1.5;   // + tope (1.5) + prolongación con el resalte (1.5)
     zg0 = z_top - pcb_th - fit;        // piso de la ranura
     zb  = zg0 - 1.2;                   // fondo del riel (labio inferior)
     e   = across/2 + fit;              // borde de la PCB (+holgura)
-    rot = axis == "x" ? 0 : 90;
+    rot = axis == "x" ? 0 : axis == "-x" ? 180 : 90;
     translate([c[0], c[1], 0]) rotate([0, 0, rot]) {
         for (s = [-1, 1]) difference() {
             // riel completo (desde el panel hacia abajo)
-            translate([-along/2 - fit, s > 0 ? e - bite : -e - rail_w, zb])
+            translate([-along/2 - fit - 1.5, s > 0 ? e - bite : -e - rail_w, zb])
                 cube([L, bite + rail_w, PZ - zb + 0.01]);
             // ranura (abierta en -X, cerrada en +X)
-            translate([-along/2 - fit - 1, s > 0 ? e - bite - 0.1 : -e - 0.01, zg0])
-                cube([along + 2*fit + 1, bite + 0.11, pcb_th + fit]);
+            translate([-along/2 - fit - 2.5, s > 0 ? e - bite - 0.1 : -e - 0.01, zg0])
+                cube([along + 2*fit + 2.5, bite + 0.11, pcb_th + fit]);
             // vaciar lo que queda por encima de la ranura del lado interior
             // (deja libre la cara superior de la PCB salvo la franja `bite`)
         }
         // resalte de traba a la entrada
         for (s = [-1, 1])
-            translate([-along/2 + 0.5, s > 0 ? e - bite : -e, zg0 - 0.01])
+            translate([-along/2 - fit - 1.3, s > 0 ? e - bite : -e, zg0 - 0.01])
                 cube([1.0, bite, 0.35]);
     }
 }
@@ -338,9 +339,9 @@ module top_panel() {
             panel_slab();
             panel_lip();
             panel_posts();
-            // OLED: rieles en Y, la placa entra por el lado izquierdo (-X)
+            // OLED: rieles en Y, la placa entra por la derecha (+X), ANTES de poner los switches
             slide_rails(oled_pos, oled_pcb[0], oled_pcb[1], oled_pcb_th,
-                        PZ - oled_glass_th - 0.2, oled_rail_w, oled_bite, "x");
+                        PZ - oled_glass_th - 0.2, oled_rail_w, oled_bite, oled_open_dir < 0 ? "x" : "-x");
             // Joystick: rieles en X, la placa entra por el frente (-Y), header al fondo
             slide_rails(joy_pcb_c, joy_pcb[1], joy_pcb[0], joy_pcb_th,
                         PZ - joy_drop, joy_rail_w, joy_bite, "y");
@@ -556,6 +557,18 @@ module placed_caps() {
 //  SELECCIÓN DE PIEZA
 // =====================================================================================
 col_base = TH[1];  col_panel = TH[2];
+// ---- Controles del OLED (deben dar VACÍO) ----
+oled_open = oled_open_dir;   // lado por donde entra la placa: -1 = izquierda, +1 = derecha
+// piezas del módulo OLED: [origen, tamaño] relativas a oled_pos
+function oled_parts(core) = let(zt = PZ - oled_glass_th - 0.2, t0 = core ? 0.4 : 0) [
+    [[-oled_pcb[0]/2, -oled_pcb[1]/2, zt - oled_pcb_th + t0], [oled_pcb[0], oled_pcb[1], oled_pcb_th - t0]], // PCB
+    [[-oled_pcb[0]/2, -19/2, zt], [oled_pcb[0], 19, oled_glass_th]],                                     // vidrio
+    [[-10, -10, zt - oled_pcb_th - 1.5], [20, 20, 1.5]]];                                                // componentes atrás
+module oled_body(core = false, dx = 0)
+    for (q = oled_parts(core)) translate([oled_pos[0] + q[0][0], oled_pos[1] + q[0][1], q[0][2]]) cube(q[1]);
+module oled_sweep(dx)   // recorrido de inserción, pieza por pieza
+    for (q = oled_parts(true)) hull() for (d = [0, dx])
+        translate([oled_pos[0] + q[0][0] + d, oled_pos[1] + q[0][1], q[0][2]]) cube(q[1]);
 if (part == "top")          // listo para imprimir: cara superior contra la cama
     rotate([180, 0, 0]) translate([0, 0, -PT]) top_panel();
 else if (part == "bottom")     tilted() bottom_tray();   // la cara inclinada contra la cama
@@ -567,6 +580,18 @@ else if (part == "caps_D")     caps_plate(0, 2);   // V, vii°
 else if (part == "cap_joy")    joystick_cap();
 else if (part == "clash")      // control: debe dar VACÍO (panel y base no se pisan)
     intersection() { top_panel(); bottom_tray(); }
+else if (part == "oled_view") {   // detalle: panel boca abajo con el OLED montado
+    rotate([180, 0, 0]) translate([0, 0, -PT]) {
+        color(col_panel) render() top_panel();
+        color([0.1, 0.2, 0.5]) oled_body();
+        color([0.95, 0.55, 0.2, 0.35]) oled_sweep(oled_open*(oled_pcb[0] + 4));
+    }
+}
+else if (part == "oled_fit")  intersection() { oled_body(); union() { top_panel(); bottom_tray(); } }
+else if (part == "oled_path") intersection() {
+    oled_sweep(oled_open*(oled_pcb[0] + 4));
+    top_panel();
+}
 else if (part == "test_keys") {
     // recorte de prueba (1 hora de impresión): 2 agujeros de switch + espesores reales
     intersection() {

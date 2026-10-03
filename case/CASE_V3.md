@@ -70,8 +70,8 @@ Cada parte se imprime por separado, así que se pueden combinar colores sin pint
 - Opcional: 11 keycaps MX.
 
 ## Armado
-1. Encastrá los 11 switches desde arriba del panel. Soldá un cable de GND que pase por todos (en cadena) y un cable por switch al GPIO que le corresponde.
-2. Deslizá el OLED en sus rieles, entrando por la izquierda. Conviene soldarle los cables directo y no usar el header.
+1. Montá primero el OLED (paso 2) y después encastrá los 11 switches desde arriba del panel. Soldá un cable de GND que pase por todos (en cadena) y un cable por switch al GPIO que le corresponde.
+2. **Antes de colocar los switches**, deslizá el OLED en sus rieles, **entrando por la derecha**, con el header hacia atrás. Empujá hasta que haga tope; al final pasa sobre un pequeño resalte que lo traba. Si entra por la izquierda, choca con la pestaña del panel, y si los switches ya están puestos, le cierran el paso. Soldale los cables directo, del lado de atrás: si el header viene soldado con los pines hacia adelante, choca contra el panel y hay que desoldarlo.
 3. Deslizá el joystick en sus rieles, entrando por el frente, con el header hacia atrás.
 4. En la base: atornillá la perfboard (con la DevKit, el PCM5102 y el ADS1115), colocá el TP4056, el buck-boost y la batería, y montá el jack y la llave en la pared derecha.
 5. Cerrá con los 4 tornillos M3 desde abajo.
