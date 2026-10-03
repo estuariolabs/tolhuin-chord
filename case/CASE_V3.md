@@ -1,6 +1,6 @@
 # Tolhuin Chord — Carcasa v3 (ESP32-S3 DevKit completa)
 
-Medidas: **146 × 88 × 35 mm**, sin contar las teclas. El archivo fuente es `tolhuin_case_v3.scad` (OpenSCAD) y todas las medidas están arriba de todo, con nombre.
+Medidas: **146 × 88 mm**. Con la inclinación de 7° la caja mide **35 mm de alto adelante y 46 mm atrás**, sin contar las teclas. El archivo fuente es `tolhuin_case_v3.scad` (OpenSCAD) y todas las medidas están arriba de todo, con nombre.
 
 ## Qué cambió y por qué
 | Problema del prototipo anterior | Solución en v3 |
@@ -31,6 +31,12 @@ Los STL no se suben al repo (se generan desde el `.scad`). Para exportarlos, abr
 4. **Teclas**: `caps_chord` en gris y `caps_fn` en naranja. También podés comprar keycaps MX en blanco, que andan seguro. `cap_joy` es el capuchón del joystick.
 
 Recomendación: PETG o PLA, con 3 perímetros y 20 % de relleno.
+
+## Inclinación (7°)
+La caja está inclinada 7° hacia quien toca, así la pantalla y las teclas quedan mejor orientadas. La inclinación sale de una **cuña maciza debajo del piso**, que se imprime junto con la base. Por dentro no cambia nada: las piezas, las alturas y los chequeos de choque son los mismos.
+- `tilt = 7` es el valor por defecto. Con `tilt = 0` vuelve a ser una caja plana; también se pueden probar 5° o 10°.
+- `tolhuin_v3_bottom.stl` ya viene apoyado sobre la cara inclinada, listo para imprimir sin soportes. La cuña es maciza: con un relleno del 15 al 20 % no gasta mucho filamento.
+- Las patitas de goma y el grabado de la URL quedan sobre la cara inclinada. Los alojamientos de los tornillos atraviesan la cuña, así que se siguen usando M3 × 12. Para los de atrás hace falta un destornillador largo, porque la cabeza queda a unos 13 mm de profundidad.
 
 ## Colores y acabado
 Cada parte se imprime por separado, así que se pueden combinar colores sin pintar nada. Para elegir la combinación, cambiá `theme` en el `.scad` y mirá el render (F5).

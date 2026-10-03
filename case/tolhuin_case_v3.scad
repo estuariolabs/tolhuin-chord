@@ -45,7 +45,9 @@ panel_th = 3.0;    // panel superior (en los switches queda la placa de sw_plate
 int_h    = btn == "mx" ? 30 : 25;  // alto interior (piso -> cara inferior del panel)
 outer_r  = 6;      // radio de las esquinas verticales
 top_cham = 1.6;    // chaflán del borde superior del panel (más amable para la muñeca)
-bot_cham = 1.0;    // chaflán del borde inferior de la base
+tilt     = 7;      // inclinación hacia el músico (grados). 0 = caja plana.
+                   // Se logra con una CUÑA maciza bajo el piso: el interior no cambia.
+bot_cham = tilt > 0 ? 0 : 1.0;  // chaflán del borde inferior (sin cuña)
 fit      = 0.3;    // holgura general entre piezas impresas
 
 // ---------------------------------------------------------------- Unión panel <-> base
@@ -193,7 +195,8 @@ dk_top    = floor_th + perf_so_h + perf_th + hdr_h + dk_th + dk_comp;
 sw_bottom = PT - sw_below;
 joy_bot   = PZ - joy_drop - joy_pcb_th - joy_under;
 bat_top   = floor_th + bat[2];
-echo(str("Medidas exteriores: ", W, " x ", D, " x ", PT, " mm (sin teclas)"));
+echo(str("Medidas exteriores: ", W, " x ", D, " x ", PT, " mm (sin teclas)",
+          tilt > 0 ? str(" + cuña de ", tilt, "°: frente ", PT, " mm, fondo ", PT + D*tan(tilt), " mm") : ""));
 echo(str("Aire DevKit <-> pines de los switches: ", sw_bottom - dk_top, " mm"));
 echo(str("Aire batería <-> joystick: ", joy_bot - bat_top, " mm"));
 assert(sw_bottom - dk_top >= 2.5, "La DevKit choca con los pines de los switches: subí int_h");
@@ -369,6 +372,22 @@ module rear_slot(x, z, sz) {
 module right_hole(y, z, d) {
     translate([W/2 - wall/2, y, z]) rotate([0, 90, 0]) cylinder(d = d, h = wall + 2, center = true);
 }
+// z (marco de la caja) de la cara inferior inclinada, en función de y
+function wz(y) = -(y + D/2) * tan(tilt);
+// apoya un objeto sobre la cara inferior inclinada, perpendicular a ella
+module on_wedge(x, y) translate([x, y, wz(y)]) rotate([-tilt, 0, 0]) children();
+module base_wedge() if (tilt > 0) {
+    h = D * tan(tilt);
+    intersection() {
+        translate([0, 0, -h - 1]) linear_extrude(h + 1.01) rsq(W, D, outer_r);
+        translate([0, -D/2, 0]) rotate([-tilt, 0, 0]) translate([-W, 0, 0]) cube([2*W, 2*D, 60]);
+    }
+}
+// todo el equipo apoyado en la mesa (gira sobre el borde inferior delantero)
+module tilted() {
+    if (tilt > 0) translate([0, -D/2, 0]) rotate([tilt, 0, 0]) translate([0, D/2, 0]) children();
+    else children();
+}
 module bottom_tray() {
     usb_z = floor_th + perf_so_h + perf_th + hdr_h + dk_th + 1.6;
     tp_z  = floor_th + mod_z + 1.6 + 1.6;
@@ -386,11 +405,14 @@ module bottom_tray() {
             module_guide(tp_pos, tp);
             module_guide(bb_pos, bb);
             battery_bay();
+            base_wedge();
         }
         // tornillos M3 desde abajo
         for (p = posts) translate([p[0], p[1], 0]) {
             translate([0, 0, -1]) cylinder(d = screw_d, h = floor_th + foot_h + 2);
             translate([0, 0, -1]) cylinder(d = screw_head, h = screw_head_h + 1);
+            // con cuña: el alojamiento de la cabeza atraviesa la cuña hasta el mismo asiento
+            if (tilt > 0) translate([0, 0, wz(p[1]) - 1]) cylinder(d = screw_head, h = -wz(p[1]) + screw_head_h + 1);
         }
         rear_slot(dk_pos[0], usb_z, dk_usb_slot);
         rear_slot(tp_pos[0], tp_z, tp_usb);
@@ -398,9 +420,9 @@ module bottom_tray() {
         right_hole(pwr_y,  floor_th + side_z, pwr_d);
         // alojamientos para patitas de goma (10 mm)
         for (sx = [-1, 1]) for (sy = [-1, 1])
-            translate([sx*(W/2 - 16), sy*(D/2 - 14), -0.01]) cylinder(d = 10.5, h = 0.8);
+            on_wedge(sx*(W/2 - 16), sy*(D/2 - 14)) translate([0, 0, -0.01]) cylinder(d = 10.5, h = 0.8);
         // URL grabada abajo (espejada para que se lea al dar vuelta el equipo)
-        translate([0, 0, -0.01]) mirror([1, 0, 0]) linear_extrude(engrave + 0.01)
+        on_wedge(0, 0) translate([0, 0, -0.01]) mirror([1, 0, 0]) linear_extrude(engrave + 0.01)
             text(url_txt, size = 5, halign = "center", valign = "center", font = label_font);
     }
 }
@@ -510,7 +532,7 @@ module placed_caps() {
 col_base = TH[1];  col_panel = TH[2];
 if (part == "top")          // listo para imprimir: cara superior contra la cama
     rotate([180, 0, 0]) translate([0, 0, -PT]) top_panel();
-else if (part == "bottom")     bottom_tray();
+else if (part == "bottom")     tilted() bottom_tray();   // la cara inclinada contra la cama
 else if (part == "caps_chord") caps_plate(0);
 else if (part == "caps_fn")    caps_plate(1);
 else if (part == "caps_T")     caps_plate(0, 0);   // I, iii, vi
@@ -524,7 +546,7 @@ else if (part == "test_keys") {
         translate([lo_x[2] + pitch/2, -lo_y, 0]) cube([2*pitch + 6, pitch + 6, 20], center = true);
     }
 }
-else if (part == "exploded") {
+else if (part == "exploded") tilted() {
     color(col_base) bottom_tray();
     if (show_ghosts) { ghosts(); ghost_jacks(); }
     translate([0, 0, 40]) {
@@ -533,7 +555,7 @@ else if (part == "exploded") {
         placed_caps();
     }
 }
-else {
+else tilted() {
     color(col_base) bottom_tray();
     color(col_panel) top_panel();
     if (show_ghosts) { ghosts(); ghost_jacks(); ghost_switches(); }
