@@ -22,7 +22,7 @@ Como el eje del joystick es corto, el panel se adelgaza a 1,2 mm alrededor del a
 5. **Batería**: `bat` (el valor actual corresponde a una 803040, de 30 × 40 × 8 mm).
 
 ## Orden de impresión
-Los STL no se suben al repo (se generan desde el `.scad`). Para exportarlos, abrí `tolhuin_case_v3.scad` en OpenSCAD, cambiá `part` (`top`, `bottom`, `caps_chord`, `caps_fn`, `cap_joy`, `test_keys`) y exportá con F6 + "Export STL". También se puede hacer desde la consola:
+Los STL no se suben al repo (se generan desde el `.scad`). Para exportarlos, abrí `tolhuin_case_v3.scad` en OpenSCAD, cambiá `part` (`top`, `bottom`, `caps_chord` o `caps_T`/`caps_S`/`caps_D`, `caps_fn`, `cap_joy`, `test_keys`) y exportá con F6 + "Export STL". También se puede hacer desde la consola:
 `openscad -D 'part="top"' -o tolhuin_v3_top.stl tolhuin_case_v3.scad`
 
 1. Primero imprimí **`tolhuin_v3_test_keys.stl`**, un recorte con 2 agujeros de switch (unos 20 minutos). Encastrá un switch y probá: tiene que entrar con un clic y no bailar. Si queda flojo o muy duro, ajustá `sw_cut` de a 0,1 mm.
@@ -31,6 +31,27 @@ Los STL no se suben al repo (se generan desde el `.scad`). Para exportarlos, abr
 4. **Teclas**: `caps_chord` en gris y `caps_fn` en naranja. También podés comprar keycaps MX en blanco, que andan seguro. `cap_joy` es el capuchón del joystick.
 
 Recomendación: PETG o PLA, con 3 perímetros y 20 % de relleno.
+
+## Colores y acabado
+Cada parte se imprime por separado, así que se pueden combinar colores sin pintar nada. Para elegir la combinación, cambiá `theme` en el `.scad` y mirá el render (F5).
+
+| Paleta | Base | Panel | Acordes | Función |
+|---|---|---|---|---|
+| `bosque` | verde bosque | hueso | verdes (3 tonos) | naranja óxido |
+| `glaciar` | blanco | blanco | celestes (3 tonos) | azul petróleo |
+| `noche` | grafito | negro | grises (3 tonos) | ámbar |
+| `lenga` | PLA madera | crema | arenas (3 tonos) | rojo lenga |
+| `mar` | petróleo | crema | arenas (3 tonos) | coral |
+| `clasico` | blanco | blanco | gris | naranja (la idea original) |
+
+- **Colores por función armónica** (`chord_color = "funcion"`): las teclas de acordes se agrupan en tres tonos, según la función de cada grado.
+  - **T** (tónica): I, iii y vi.
+  - **S** (subdominante): ii y IV.
+  - **D** (dominante): V y vii°.
+
+  La agrupación vale tanto en mayor como en menor, y ayuda a encontrar los acordes de memoria. Para imprimirlas así, exportá `caps_T`, `caps_S` y `caps_D`, cada una en su color. Si preferís un solo color, usá `chord_color = "uniforme"` y exportá `caps_chord`.
+- **Leyendas de otro color**: las leyendas van en relieve. Si en el slicer agregás un cambio de filamento (M600, o "pausa" en Cura y PrusaSlicer) a **7,5 mm** de altura, las letras salen en otro color.
+- **Grabados del panel** (`deco = true`): un marco alrededor del OLED, un aro alrededor del joystick y una línea entre la fila de función y los acordes. Si los repasás con un marcador de pintura, quedan bien marcados.
 
 ## Compras nuevas
 - 11 switches MX (Gateron, Outemu o similares, todos sirven).

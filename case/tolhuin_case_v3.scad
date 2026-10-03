@@ -23,9 +23,17 @@
 //  Exportar cada pieza cambiando `part` (o con -D part="top" desde la consola).
 // =====================================================================================
 
-part = "assembled";  // "assembled" | "exploded" | "top" | "bottom" | "caps_chord" | "caps_fn" | "cap_joy" | "test_keys"
+part = "assembled";  // "assembled" | "exploded" | "top" | "bottom" | "caps_chord" | "caps_fn"
+                     // | "caps_T" | "caps_S" | "caps_D" | "cap_joy" | "test_keys"
 btn  = "mx";         // "mx" (Cherry MX y clones: Gateron, Outemu...) | "choc" (Kailh Choc v1, perfil bajo)
 show_ghosts = true;  // en "assembled"/"exploded": dibuja componentes de referencia
+theme       = "bosque";   // paleta (solo afecta el render; al imprimir = color de filamento):
+                          // "bosque" | "glaciar" | "noche" | "lenga" | "mar" | "clasico"
+chord_color = "funcion";  // "funcion": grados coloreados por función armónica
+                          //   T (I, iii, vi) · S (ii, IV) · D (V, vii°) — vale en mayor y en menor
+                          // "uniforme": los 7 grados del mismo color
+deco        = true;       // grabados finos en el panel: marco del OLED, aro del joystick,
+                          // línea que separa función/acordes (se pueden rellenar con fibra)
 $fn = 48;
 
 // ---------------------------------------------------------------- Envolvente
@@ -36,7 +44,7 @@ floor_th = 2.4;
 panel_th = 3.0;    // panel superior (en los switches queda la placa de sw_plate)
 int_h    = btn == "mx" ? 30 : 25;  // alto interior (piso -> cara inferior del panel)
 outer_r  = 6;      // radio de las esquinas verticales
-top_cham = 1.0;    // chaflán del borde superior del panel
+top_cham = 1.6;    // chaflán del borde superior del panel (más amable para la muñeca)
 bot_cham = 1.0;    // chaflán del borde inferior de la base
 fit      = 0.3;    // holgura general entre piezas impresas
 
@@ -158,10 +166,26 @@ PT  = PZ + panel_th;             // z de la cara superior del panel
 IW2 = W/2 - wall;  ID2 = D/2 - wall;
 posts = [for (sx = [-1, 1]) for (sy = [-1, 1]) [sx*(W/2 - post_inset), sy*(D/2 - post_inset)]];
 dk_pos = [dk_x, ID2 - dk_usb_overhang - 0.5 - dk[1]/2];
+// [x, y, leyenda, grupo (0 acorde / 1 función), grado 0..6 (-1 = función)]
 keys = concat(
-    [for (i = [0:3]) [lo_x[i], lo_y, lo_lbl[i], 0]],
-    [for (i = [0:2]) [hi_x[i], hi_y, hi_lbl[i], 0]],
-    [for (i = [0:3]) [fn_x[i], fn_y, fn_lbl[i], 1]]);
+    [for (i = [0:3]) [lo_x[i], lo_y, lo_lbl[i], 0, i]],
+    [for (i = [0:2]) [hi_x[i], hi_y, hi_lbl[i], 0, 4 + i]],
+    [for (i = [0:3]) [fn_x[i], fn_y, fn_lbl[i], 1, -1]]);
+// función armónica de cada grado: 0 = T (I iii vi), 1 = S (ii IV), 2 = D (V vii°)
+deg_fn = [0, 1, 0, 1, 2, 0, 2];
+
+// ---------------------------------------------------------------- Paletas
+// [base, panel, [acorde T, S, D], función, joystick, leyenda acordes, leyenda función]
+// Colores elegidos para que existan como filamento PLA/PETG común.
+themes = [
+  ["bosque",  "#2F4A3A", "#ECE6D6", ["#D8DFC9", "#A9BF9F", "#6F8F6A"], "#C8642E", "#2F4A3A", "#22332A", "#FFF4E8"],
+  ["glaciar", "#E4EAED", "#F7F8F8", ["#CFE0EA", "#94BCD2", "#4F86A8"], "#24506E", "#2B2F33", "#1F3340", "#F2F7FA"],
+  ["noche",   "#2A2C30", "#1C1D20", ["#E3E5E8", "#B5B9C0", "#868C96"], "#F0B23C", "#F0B23C", "#1C1D20", "#1C1D20"],
+  ["lenga",   "#7A5A3E", "#EFE7D8", ["#EADCC2", "#D4B48A", "#A97E52"], "#B23A2A", "#3A2A1E", "#3A2A1E", "#FBEDE6"],
+  ["mar",     "#1F4E5A", "#F2EFE8", ["#F4E3C3", "#E9C98F", "#C99A5B"], "#E07A5F", "#1F4E5A", "#1F4E5A", "#FFF6F1"],
+  ["clasico", "#F2F2F2", "#F2F2F2", ["#C9C9C9", "#C9C9C9", "#C9C9C9"], "#FF8C42", "#262628", "#3A3A3A", "#3A3A3A"]];
+TH = themes[max(0, search([theme], themes)[0])];
+function chord_col(deg) = chord_color == "funcion" ? TH[3][deg_fn[deg]] : TH[3][0];
 joy_pcb_c = [joy_pos[0], joy_pos[1] + joy_stick_dy];
 
 // ---------------------------------------------------------------- Chequeos de choque
@@ -187,7 +211,7 @@ module rsq(w, h, r) {
     hull() for (sx = [-1, 1]) for (sy = [-1, 1])
         translate([sx*(w/2 - r2), sy*(h/2 - r2)]) circle(r = r2);
 }
-function label_size(w, s) = min(w*0.42, w*0.72 / max(1, len(s)*0.68));
+function label_size(w, s) = min(w*0.42, w*0.62 / max(1, len(s)*0.68));
 
 // =====================================================================================
 //  PANEL SUPERIOR
@@ -260,6 +284,25 @@ module joy_hole() {
     translate([joy_pos[0], joy_pos[1], PZ - 1]) cylinder(d = joy_hole_d, h = panel_th + 2);
     translate([joy_pos[0], joy_pos[1], PT - 1.2]) cylinder(d1 = joy_hole_d, d2 = joy_hole_d + 2.4, h = 1.21);
 }
+// Grabados decorativos (0.5 mm, ancho de 2 pasadas de boquilla 0.4)
+deco_w = 0.8;  deco_d = 0.5;
+module deco_engrave() if (deco) {
+    c = [oled_pos[0] + oled_win_off[0], oled_pos[1] + oled_win_off[1]];
+    translate([0, 0, PT - deco_d]) linear_extrude(deco_d + 1) {
+        // marco del OLED
+        translate(c) difference() {
+            rsq(oled_win[0] + 9, oled_win[1] + 9, 2.5);
+            rsq(oled_win[0] + 9 - 2*deco_w, oled_win[1] + 9 - 2*deco_w, 2.5 - deco_w);
+        }
+        // aro del joystick
+        translate(joy_pos) difference() {
+            circle(d = joy_hole_d + 9);
+            circle(d = joy_hole_d + 9 - 2*deco_w);
+        }
+        // línea entre la fila de función y los acordes
+        translate([(fn_x[0] + fn_x[3])/2, (fn_y + hi_y)/2]) square([fn_x[3] - fn_x[0] + 18, deco_w], center = true);
+    }
+}
 module brand_engrave() {
     translate([(fn_x[0] + fn_x[3])/2, (fn_y + 9.5 + D/2)/2, PT - engrave])
         linear_extrude(engrave + 1)
@@ -283,6 +326,7 @@ module top_panel() {
         joy_hole();
         panel_post_pilots();
         brand_engrave();
+        deco_engrave();
     }
 }
 
@@ -364,7 +408,13 @@ module bottom_tray() {
 // =====================================================================================
 //  TECLAS (keycaps) y capuchón del joystick
 // =====================================================================================
-module keycap(lbl) {
+module keycap(lbl) { keycap_body(lbl); keycap_legend(lbl); }
+// Leyenda en relieve (MX). Para que contraste: cambio de filamento en z = cap_mx[2]
+// (pausa M600 en el slicer a esa altura) -> la leyenda sale en otro color.
+module keycap_legend(lbl) if (btn == "mx")
+    translate([0, 0, cap_mx[2] - 0.01]) linear_extrude(label_h)
+        text(lbl, size = label_size(cap_mx[1], lbl), halign = "center", valign = "center", font = label_font);
+module keycap_body(lbl) {
     if (btn == "mx") {
         b = cap_mx[0];  t = cap_mx[1];  h = cap_mx[2];
         difference() {
@@ -385,8 +435,6 @@ module keycap(lbl) {
                 square([mx_cross[1], mx_cross[0]], center = true);
             }
         }
-        translate([0, 0, h - 0.01]) linear_extrude(label_h)
-            text(lbl, size = label_size(t, lbl), halign = "center", valign = "center", font = label_font);
     } else {
         // Choc: se imprime con el TOPE contra la cama; la leyenda va grabada.
         w = cap_choc[0];  d = cap_choc[1];  h = cap_choc[2];
@@ -399,8 +447,9 @@ module keycap(lbl) {
             cube(choc_prong, center = true);
     }
 }
-module caps_plate(group) {
-    sel = [for (k = keys) if (k[3] == group) k];
+// group: 0 acordes, 1 función; fsel: -1 todos, 0/1/2 = solo los grados T/S/D
+module caps_plate(group, fsel = -1) {
+    sel = [for (k = keys) if (k[3] == group && (fsel < 0 || deg_fn[k[4]] == fsel)) k];
     for (i = [0:len(sel) - 1])
         translate([(i % 4)*22, -floor(i/4)*22, btn == "mx" ? 0 : cap_choc[2]])
             rotate([btn == "mx" ? 0 : 180, 0, 0]) keycap(sel[i][2]);
@@ -449,19 +498,24 @@ module ghost_jacks() {
 }
 module placed_caps() {
     z = PT + (btn == "mx" ? 6.4 : 3.0);
-    for (k = keys) translate([k[0], k[1], z])
-        color(k[3] == 1 ? [1, 0.55, 0.26] : [0.79, 0.79, 0.79]) keycap(k[2]);
+    for (k = keys) translate([k[0], k[1], z]) {
+        color(k[3] == 1 ? TH[4] : chord_col(k[4])) keycap_body(k[2]);
+        color(k[3] == 1 ? TH[7] : TH[6]) keycap_legend(k[2]);
+    }
 }
 
 // =====================================================================================
 //  SELECCIÓN DE PIEZA
 // =====================================================================================
-col_shell = [0.95, 0.95, 0.95];
+col_base = TH[1];  col_panel = TH[2];
 if (part == "top")          // listo para imprimir: cara superior contra la cama
     rotate([180, 0, 0]) translate([0, 0, -PT]) top_panel();
 else if (part == "bottom")     bottom_tray();
 else if (part == "caps_chord") caps_plate(0);
 else if (part == "caps_fn")    caps_plate(1);
+else if (part == "caps_T")     caps_plate(0, 0);   // I, iii, vi
+else if (part == "caps_S")     caps_plate(0, 1);   // ii, IV
+else if (part == "caps_D")     caps_plate(0, 2);   // V, vii°
 else if (part == "cap_joy")    joystick_cap();
 else if (part == "test_keys") {
     // recorte de prueba (1 hora de impresión): 2 agujeros de switch + espesores reales
@@ -471,19 +525,19 @@ else if (part == "test_keys") {
     }
 }
 else if (part == "exploded") {
-    color(col_shell) bottom_tray();
+    color(col_base) bottom_tray();
     if (show_ghosts) { ghosts(); ghost_jacks(); }
     translate([0, 0, 40]) {
-        color(col_shell, 0.85) top_panel();
+        color(col_panel, 0.85) top_panel();
         if (show_ghosts) ghost_switches();
         placed_caps();
     }
 }
 else {
-    color(col_shell) bottom_tray();
-    color(col_shell) top_panel();
+    color(col_base) bottom_tray();
+    color(col_panel) top_panel();
     if (show_ghosts) { ghosts(); ghost_jacks(); ghost_switches(); }
     placed_caps();
     translate([joy_pos[0], joy_pos[1], PZ - joy_drop + joy_shaft_top - (joy_cap_h - 1.5)])
-        color([0.15, 0.15, 0.16]) joystick_cap();
+        color(TH[5]) joystick_cap();
 }
