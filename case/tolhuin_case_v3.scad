@@ -45,7 +45,9 @@ panel_th = 3.0;    // panel superior (en los switches queda la placa de sw_plate
 int_h    = btn == "mx" ? 30 : 25;  // alto interior (piso -> cara inferior del panel)
 outer_r  = 6;      // radio de las esquinas verticales
 top_cham = 1.6;    // chaflán del borde superior del panel (más amable para la muñeca)
-tilt     = 7;      // inclinación hacia el músico (grados). 0 = caja plana.
+front_bevel = [8, 12]; // bisel del borde frontal superior [hondo en Y, alto en Z] (mm).
+                       // Baja la altura donde apoya la muñeca. [0, 0] = sin bisel.
+tilt     = 0;      // inclinación con cuña bajo el piso (grados). 0 = caja plana.
                    // Se logra con una CUÑA maciza bajo el piso: el interior no cambia.
 bot_cham = tilt > 0 ? 0 : 1.0;  // chaflán del borde inferior (sin cuña)
 fit      = 0.3;    // holgura general entre piezas impresas
@@ -72,7 +74,7 @@ sw_below  = btn == "mx" ? 5.0 + 3.3 + 1.5 : 2.2 + 3.0 + 1.5;
 
 // ---------------------------------------------------------------- Layout del panel
 key_x0 = 52;                               // centro de la tecla de más a la derecha
-lo_y   = -27;                              // fila inferior de acordes (I..IV)
+lo_y   = -25;                              // fila inferior de acordes (I..IV)
 hi_y   = lo_y + pitch;                     // fila superior de acordes (V..VII)
 fn_y   = hi_y + pitch + 5;                 // fila de función (separada 5 mm más)
 lo_x   = [for (i = [3:-1:0]) key_x0 - i*pitch];
@@ -95,7 +97,7 @@ oled_rail_w   = 2.0;
 oled_bite     = 0.9;         // cuánto pisa el riel el borde de la PCB (no tocar el vidrio)
 
 // ---------------------------------------------------------------- Joystick HW-504
-joy_pos       = [col_x, -22];  // eje del stick en el panel
+joy_pos       = [col_x, -20];  // eje del stick en el panel
 joy_pcb       = [26, 33];      // medida real (calibre, confirmada)
 joy_pcb_th    = 1.6;
 joy_under     = 3.0;           // patas de los potes / soldaduras por debajo de la PCB
@@ -118,7 +120,7 @@ joy_cap_h     = 7;
 perf      = [50, 70];   // perfboard 5x7 cm (X, Y)
 perf_th   = 1.6;
 perf_hole = 2.5;        // MEDIR: centro de los agujeros de esquina desde cada borde
-perf_so_h = 4;          // parantes
+perf_so_h = 3;          // parantes
 perf_pos  = [12, D/2 - wall - 1.0 - perf[1]/2];
 hdr_h     = 8.5;        // tira de headers hembra 2.54 mm
 dk        = [27, 63];   // DevKit real: 27 x 50 mm + antena = 63 mm (calibre, usuario)
@@ -166,7 +168,11 @@ choc_prong_dx = 5.7;
 PZ  = floor_th + int_h;          // z de la cara inferior del panel
 PT  = PZ + panel_th;             // z de la cara superior del panel
 IW2 = W/2 - wall;  ID2 = D/2 - wall;
-posts = [for (sx = [-1, 1]) for (sy = [-1, 1]) [sx*(W/2 - post_inset), sy*(D/2 - post_inset)]];
+BEV = front_bevel[0] > 0 && front_bevel[1] > 0;
+// con bisel, las columnas delanteras se corren hacia atrás para no cruzar la pared inclinada
+post_inset_f = BEV ? 14 : post_inset;
+posts = [for (sx = [-1, 1]) for (sy = [-1, 1])
+            [sx*(W/2 - post_inset), sy > 0 ? D/2 - post_inset : -(D/2 - post_inset_f)]];
 dk_pos = [dk_x, ID2 - dk_usb_overhang - 0.5 - dk[1]/2];
 // [x, y, leyenda, grupo (0 acorde / 1 función), grado 0..6 (-1 = función)]
 keys = concat(
@@ -198,6 +204,8 @@ bat_top   = floor_th + bat[2];
 echo(str("Medidas exteriores: ", W, " x ", D, " x ", PT, " mm (sin teclas)",
           tilt > 0 ? str(" + cuña de ", tilt, "°: frente ", PT, " mm, fondo ", PT + D*tan(tilt), " mm") : ""));
 echo(str("Aire DevKit <-> pines de los switches: ", sw_bottom - dk_top, " mm"));
+echo(str("Altura del borde frontal (apoyo de muñeca): ", BEV ? PT - front_bevel[1] : PT, " mm"));
+echo(str("Altura hasta la superficie de las teclas: ", PT + (btn == "mx" ? 6.4 + cap_mx[2] : 3.0 + cap_choc[2]), " mm"));
 echo(str("Aire batería <-> joystick: ", joy_bot - bat_top, " mm"));
 assert(sw_bottom - dk_top >= 2.5, "La DevKit choca con los pines de los switches: subí int_h");
 assert(joy_bot - bat_top >= 1.5, "El joystick choca con la batería: bajá bat[2] o subí int_h");
@@ -311,6 +319,19 @@ module brand_engrave() {
         linear_extrude(engrave + 1)
             text(brand_txt, size = brand_sz, halign = "center", valign = "center", font = label_font);
 }
+// ---- Bisel frontal: prisma que se quita (bev_cut) y franja de pared inclinada (bev_wall)
+module bev_prism(off = 0) if (BEV) {
+    cy = front_bevel[0];  cz = front_bevel[1];
+    L  = sqrt(cy*cy + cz*cz);
+    n  = [cz/L, -cy/L];               // normal hacia el interior (+Y, -Z)
+    k  = cz/cy;
+    translate([0, off*n[0], off*n[1]]) rotate([90, 0, 90]) linear_extrude(W + 2, center = true)
+        polygon([[-D/2 - 1, PT - cz - k], [-D/2 + cy + 1, PT + k], [-D/2 + cy + 1, PT + 20], [-D/2 - 1, PT + 20]]);
+}
+module bev_wall() if (BEV) intersection() {
+    difference() { bev_prism(wall); bev_prism(0); }
+    linear_extrude(PZ) rsq(W, D, outer_r);
+}
 module top_panel() {
     difference() {
         union() {
@@ -330,6 +351,9 @@ module top_panel() {
         panel_post_pilots();
         brand_engrave();
         deco_engrave();
+        bev_prism(0);
+        // debajo del panel, nada invade la pared inclinada de la base
+        intersection() { bev_prism(wall + 0.3); translate([-W, -D, -1]) cube([2*W, 2*D, PZ + 1]); }
     }
 }
 
@@ -406,7 +430,9 @@ module bottom_tray() {
             module_guide(bb_pos, bb);
             battery_bay();
             base_wedge();
+            bev_wall();
         }
+        bev_prism(0);
         // tornillos M3 desde abajo
         for (p = posts) translate([p[0], p[1], 0]) {
             translate([0, 0, -1]) cylinder(d = screw_d, h = floor_th + foot_h + 2);
@@ -462,7 +488,7 @@ module keycap_body(lbl) {
         w = cap_choc[0];  d = cap_choc[1];  h = cap_choc[2];
         difference() {
             linear_extrude(h) rsq(w, d, 1.5);
-            translate([0, 0, h - 0.6]) linear_extrude(1) mirror([1, 0, 0])
+            translate([0, 0, h - 0.6]) linear_extrude(1)
                 text(lbl, size = label_size(w - 2, lbl), halign = "center", valign = "center", font = label_font);
         }
         for (s = [-1, 1]) translate([s*choc_prong_dx/2, 0, -choc_prong[2]/2 + 0.01])
@@ -539,6 +565,8 @@ else if (part == "caps_T")     caps_plate(0, 0);   // I, iii, vi
 else if (part == "caps_S")     caps_plate(0, 1);   // ii, IV
 else if (part == "caps_D")     caps_plate(0, 2);   // V, vii°
 else if (part == "cap_joy")    joystick_cap();
+else if (part == "clash")      // control: debe dar VACÍO (panel y base no se pisan)
+    intersection() { top_panel(); bottom_tray(); }
 else if (part == "test_keys") {
     // recorte de prueba (1 hora de impresión): 2 agujeros de switch + espesores reales
     intersection() {
@@ -556,8 +584,9 @@ else if (part == "exploded") tilted() {
     }
 }
 else tilted() {
-    color(col_base) bottom_tray();
-    color(col_panel) top_panel();
+    // render(): el preview muestra las caras cortadas con el color real de cada pieza
+    color(col_base) render() bottom_tray();
+    color(col_panel) render() top_panel();
     if (show_ghosts) { ghosts(); ghost_jacks(); ghost_switches(); }
     placed_caps();
     translate([joy_pos[0], joy_pos[1], PZ - joy_drop + joy_shaft_top - (joy_cap_h - 1.5)])

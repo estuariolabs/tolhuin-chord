@@ -1,6 +1,6 @@
 # Tolhuin Chord — Carcasa v3 (ESP32-S3 DevKit completa)
 
-Medidas: **146 × 88 mm**. Con la inclinación de 7° la caja mide **35 mm de alto adelante y 46 mm atrás**, sin contar las teclas. El archivo fuente es `tolhuin_case_v3.scad` (OpenSCAD) y todas las medidas están arriba de todo, con nombre.
+Medidas: **146 × 88 × 35 mm** con switches MX (30 mm con Choc), sin contar las teclas. El frente está biselado. El archivo fuente es `tolhuin_case_v3.scad` (OpenSCAD) y todas las medidas están arriba de todo, con nombre.
 
 ## Qué cambió y por qué
 | Problema del prototipo anterior | Solución en v3 |
@@ -32,11 +32,13 @@ Los STL no se suben al repo (se generan desde el `.scad`). Para exportarlos, abr
 
 Recomendación: PETG o PLA, con 3 perímetros y 20 % de relleno.
 
-## Inclinación (7°)
-La caja está inclinada 7° hacia quien toca, así la pantalla y las teclas quedan mejor orientadas. La inclinación sale de una **cuña maciza debajo del piso**, que se imprime junto con la base. Por dentro no cambia nada: las piezas, las alturas y los chequeos de choque son los mismos.
-- `tilt = 7` es el valor por defecto. Con `tilt = 0` vuelve a ser una caja plana; también se pueden probar 5° o 10°.
-- `tolhuin_v3_bottom.stl` ya viene apoyado sobre la cara inclinada, listo para imprimir sin soportes. La cuña es maciza: con un relleno del 15 al 20 % no gasta mucho filamento.
-- Las patitas de goma y el grabado de la URL quedan sobre la cara inclinada. Los alojamientos de los tornillos atraviesan la cuña, así que se siguen usando M3 × 12. Para los de atrás hace falta un destornillador largo, porque la cabeza queda a unos 13 mm de profundidad.
+## Ergonomía
+Para que tocar sea cómodo, lo que más importa es la **altura donde apoya la muñeca** y la **altura de las teclas**.
+- **Frente biselado** (`front_bevel = [8, 12]`, activo por defecto): el borde frontal superior se corta en diagonal, así que la muñeca apoya a **23 mm** con MX (a 18 mm con Choc) en vez de 35. La pared inclinada es parte de la base. Las columnas de tornillo de adelante se corrieron hacia atrás para no cruzarla.
+- **Switches de perfil bajo** (`btn = "choc"`, Kailh Choc v1): es la opción más ergonómica. La superficie de las teclas baja de **49 a 37 mm** y la caja queda 5 mm más baja. Las teclas Choc llevan la leyenda grabada.
+- **Inclinación con cuña** (`tilt`): quedó desactivada (`tilt = 0`). Sigue disponible como opción.
+
+Para comparar las opciones, cambiá `btn` y `front_bevel` y mirá el render (F5). Los chequeos de choque se actualizan solos.
 
 ## Colores y acabado
 Cada parte se imprime por separado, así que se pueden combinar colores sin pintar nada. Para elegir la combinación, cambiá `theme` en el `.scad` y mirá el render (F5).
