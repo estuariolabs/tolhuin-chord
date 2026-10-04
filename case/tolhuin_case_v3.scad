@@ -97,6 +97,20 @@ oled_rail_w   = 2.0;
 oled_bite     = 0.9;         // cuánto pisa el riel el borde de la PCB (no tocar el vidrio)
 oled_open_dir = 1;           // lado abierto de los rieles: +1 derecha (por la izquierda choca con la pestaña del panel)
 
+// ---------------------------------------------------------------- Pantalla alternativa: TFT 1.54" 240x240
+// ⚠️ CONCEPTO (render). Es un TFT color IPS con controlador ST7789 por SPI, no un OLED:
+// cambia el cableado (SCK/MOSI/DC/CS/RST/BL) y la librería gráfica del firmware.
+display  = "oled096";        // "oled096" (actual) | "tft154" (concepto)
+tft_pos  = [-38, 21];        // centro de la PCB
+tft_pcb  = [39, 31.5];       // MEDIR: PCB típica (X con el header de pines a la derecha, +X)
+tft_glass= [33.5, 31.5];     // MEDIR: vidrio, pegado al lado opuesto al header
+tft_th   = 4.2;              // MEDIR: vidrio + backlight + PCB
+tft_win  = [28.6, 28.6];     // área activa 27.7 x 27.7 + tolerancia
+tft_glass_dx = -(tft_pcb[0] - tft_glass[0]) / 2;   // el vidrio queda corrido hacia -X
+TFT = display == "tft154";
+disp_win   = TFT ? tft_win : oled_win;
+disp_win_c = TFT ? [tft_pos[0] + tft_glass_dx, tft_pos[1]] : [oled_pos[0] + oled_win_off[0], oled_pos[1] + oled_win_off[1]];
+
 // ---------------------------------------------------------------- Joystick HW-504
 joy_pos       = [col_x, -20];  // eje del stick en el panel
 joy_pcb       = [26, 33];      // medida real (calibre, confirmada)
@@ -283,12 +297,12 @@ module slide_rails(c, along, across, pcb_th, z_top, rail_w, bite, axis) {
     }
 }
 module oled_window() {
-    c = [oled_pos[0] + oled_win_off[0], oled_pos[1] + oled_win_off[1]];
-    translate([c[0], c[1], PZ - 1]) linear_extrude(panel_th + 2) square(oled_win, center = true);
+    c = disp_win_c;
+    translate([c[0], c[1], PZ - 1]) linear_extrude(panel_th + 2) square(disp_win, center = true);
     // bisel superior para ver la pantalla en ángulo
     translate([c[0], c[1], 0]) hull() {
-        translate([0, 0, PT - 1.2]) linear_extrude(0.01) square(oled_win, center = true);
-        translate([0, 0, PT + 0.01]) linear_extrude(0.01) square([oled_win[0] + 2.4, oled_win[1] + 2.4], center = true);
+        translate([0, 0, PT - 1.2]) linear_extrude(0.01) square(disp_win, center = true);
+        translate([0, 0, PT + 0.01]) linear_extrude(0.01) square([disp_win[0] + 2.4, disp_win[1] + 2.4], center = true);
     }
 }
 module joy_hole() {
@@ -299,12 +313,12 @@ module joy_hole() {
 // Grabados decorativos (0.5 mm, ancho de 2 pasadas de boquilla 0.4)
 deco_w = 0.8;  deco_d = 0.5;
 module deco_engrave() if (deco) {
-    c = [oled_pos[0] + oled_win_off[0], oled_pos[1] + oled_win_off[1]];
+    c = disp_win_c;
     translate([0, 0, PT - deco_d]) linear_extrude(deco_d + 1) {
         // marco del OLED
         translate(c) difference() {
-            rsq(oled_win[0] + 9, oled_win[1] + 9, 2.5);
-            rsq(oled_win[0] + 9 - 2*deco_w, oled_win[1] + 9 - 2*deco_w, 2.5 - deco_w);
+            rsq(disp_win[0] + 9, disp_win[1] + 9, 2.5);
+            rsq(disp_win[0] + 9 - 2*deco_w, disp_win[1] + 9 - 2*deco_w, 2.5 - deco_w);
         }
         // aro del joystick
         translate(joy_pos) difference() {
@@ -333,6 +347,38 @@ module bev_wall() if (BEV) intersection() {
     difference() { bev_prism(wall); bev_prism(0); }
     linear_extrude(PZ) rsq(W, D, outer_r);
 }
+// Marco que ubica el TFT contra el panel (concepto: la retención final depende del
+// módulo real — agujeros de montaje si los trae, o una placa de presión atornillada)
+module tft_frame() {
+    o = [tft_pcb[0] + 2*fit + 3.2, tft_pcb[1] + 2*fit + 3.2];
+    translate([tft_pos[0], tft_pos[1], PZ - tft_th - 0.5]) linear_extrude(tft_th + 0.51) difference() {
+        square(o, center = true);
+        square([tft_pcb[0] + 2*fit, tft_pcb[1] + 2*fit], center = true);
+        translate([o[0]/2, 0]) square([6, tft_pcb[1] - 6], center = true);   // salida de cables (header)
+    }
+}
+module tft_ghost() {
+    translate([tft_pos[0], tft_pos[1], PZ - tft_th]) {
+        color([0.1, 0.25, 0.15]) translate([0, 0, 0]) linear_extrude(1.6) square(tft_pcb, center = true);
+        color([0.08, 0.08, 0.09]) translate([tft_glass_dx, 0, 1.6]) linear_extrude(tft_th - 1.6) square(tft_glass, center = true);
+    }
+}
+// "pantalla encendida" ilustrativa: mock de la UI en el área visible (solo render)
+module tft_ui() {
+    c = disp_win_c;  a = 27.7;
+    translate([c[0], c[1], PT - panel_th + 0.02]) {
+        color([0.04, 0.05, 0.08]) linear_extrude(0.01) square([a, a], center = true);
+        color([0.96, 0.94, 0.88]) translate([0, 5.5, 0.01]) linear_extrude(0.01)
+            text("Cmaj7", size = 5.2, halign = "center", valign = "center", font = label_font);
+        color([0.55, 0.75, 0.55]) translate([0, -1.2, 0.01]) linear_extrude(0.01)
+            text("I · C IONIAN", size = 2.1, halign = "center", valign = "center", font = label_font);
+        for (i = [0:6]) color(i == 0 ? [0.93, 0.48, 0.2] : [0.3, 0.33, 0.38])
+            translate([-a/2 + 2.2 + i*3.6, -6.5, 0.01]) linear_extrude(0.01) square([3, 2.6]);
+        color([0.93, 0.48, 0.2]) for (i = [0:59])
+            translate([-a/2 + 1.5 + i*(a - 3)/60, -10.5 + 1.6*sin(i*24)*(1 - abs(i - 30)/34), 0.01])
+                linear_extrude(0.01) square([(a - 3)/60 + 0.05, 0.5], center = true);
+    }
+}
 module top_panel() {
     difference() {
         union() {
@@ -340,7 +386,8 @@ module top_panel() {
             panel_lip();
             panel_posts();
             // OLED: rieles en Y, la placa entra por la derecha (+X), ANTES de poner los switches
-            slide_rails(oled_pos, oled_pcb[0], oled_pcb[1], oled_pcb_th,
+            if (TFT) tft_frame();
+            else slide_rails(oled_pos, oled_pcb[0], oled_pcb[1], oled_pcb_th,
                         PZ - oled_glass_th - 0.2, oled_rail_w, oled_bite, oled_open_dir < 0 ? "x" : "-x");
             // Joystick: rieles en X, la placa entra por el frente (-Y), header al fondo
             slide_rails(joy_pcb_c, joy_pcb[1], joy_pcb[0], joy_pcb_th,
@@ -531,9 +578,10 @@ module ghosts() {
     color([0.1, 0.35, 0.6]) translate([bb_pos[0], bb_pos[1], floor_th + mod_z + 0.8]) cube([bb[0], bb[1], 1.6], center = true);
 }
 module ghost_switches() {   // todo lo que cuelga del panel
+    if (TFT) tft_ghost();
     // OLED y joystick
-    color([0.1, 0.2, 0.5]) translate([oled_pos[0], oled_pos[1], PZ - oled_glass_th - 0.2 - oled_pcb_th/2]) cube([oled_pcb[0], oled_pcb[1], oled_pcb_th], center = true);
-    color([0.05, 0.05, 0.05]) translate([oled_pos[0], oled_pos[1], PZ - 0.2 - oled_glass_th/2]) cube([oled_pcb[0], 19, oled_glass_th], center = true);
+    if (!TFT) color([0.1, 0.2, 0.5]) translate([oled_pos[0], oled_pos[1], PZ - oled_glass_th - 0.2 - oled_pcb_th/2]) cube([oled_pcb[0], oled_pcb[1], oled_pcb_th], center = true);
+    if (!TFT) color([0.05, 0.05, 0.05]) translate([oled_pos[0], oled_pos[1], PZ - 0.2 - oled_glass_th/2]) cube([oled_pcb[0], 19, oled_glass_th], center = true);
     color([0.1, 0.2, 0.5]) translate([joy_pcb_c[0], joy_pcb_c[1], PZ - joy_drop - joy_pcb_th/2]) cube([joy_pcb[0], joy_pcb[1], joy_pcb_th], center = true);
     color([0.2, 0.2, 0.2]) translate([joy_pos[0], joy_pos[1], PZ - joy_drop]) cylinder(d = 17, h = 11);
     color([0.6, 0.6, 0.6]) translate([joy_pos[0], joy_pos[1], PZ - joy_drop]) cylinder(d = joy_shaft_d, h = joy_shaft_top);
@@ -587,6 +635,11 @@ else if (part == "oled_view") {   // detalle: panel boca abajo con el OLED monta
         color([0.95, 0.55, 0.2, 0.35]) oled_sweep(oled_open*(oled_pcb[0] + 4));
     }
 }
+else if (part == "tft_fit")   // concepto TFT: el módulo no debe pisar el panel (salvo el contacto plano)
+    intersection() {
+        translate([tft_pos[0], tft_pos[1], PZ - tft_th + 0.01]) linear_extrude(tft_th - 0.02) square(tft_pcb, center = true);
+        top_panel();
+    }
 else if (part == "oled_fit")  intersection() { oled_body(); union() { top_panel(); bottom_tray(); } }
 else if (part == "oled_path") intersection() {
     oled_sweep(oled_open*(oled_pcb[0] + 4));
@@ -613,6 +666,7 @@ else tilted() {
     color(col_base) render() bottom_tray();
     color(col_panel) render() top_panel();
     if (show_ghosts) { ghosts(); ghost_jacks(); ghost_switches(); }
+    if (TFT) tft_ui();
     placed_caps();
     translate([joy_pos[0], joy_pos[1], PZ - joy_drop + joy_shaft_top - (joy_cap_h - 1.5)])
         color(TH[5]) joystick_cap();
