@@ -1,48 +1,23 @@
-# Binarios de test de host
-test/*.exe
-test/*.wav
+# Artefactos de build del firmware
+flash/
+*.bin
+*.uf2
+*.elf
+
+# Binarios de test / objetos
+*.exe
+*.o
+*.obj
+test/test_dsp
+test/test_harmony
+test/test_evloop
+
+# Salidas de render de tests (NO los samples propios de tools/samples/)
 test/out_*.wav
 
-# Archivos temporales de Arduino/IDE
-*.bak
-build/
-.arduino*/
-
-# OS
-Thumbs.db
-.DS_Store
-
-# Artefactos del pipeline de video para Instagram (video_voz.py): ahora viven en
-# ..\pipeline_video\ — estas reglas quedan de RED DE SEGURIDAD por si algún
-# render/modelo vuelve a caer acá por costumbre.
-video_voz.py
-*.onnx
-*.onnx.json
-espeak-ng-data/
-piper.exe
-piper_phonemize.dll
-onnxruntime*.dll
-espeak-ng.dll
-libtashkeel_model.ort
-*.mp4
-voz_*.wav
-subs_*.ass
-fonts/
-imagenes/
+# Python
 __pycache__/
+*.pyc
 
-# Artefactos de build que no van al repo (los .bin exportados de flash/ SÍ van)
-flash/*.elf
-flash/*.map
-
-# Banco de calibración de timbres: el fuente (render_ref.cpp) SÍ va; el exe y los
-# WAV de trabajo, no.
-tools/*.exe
-tools/*.wav
-
-# Gabinete 3D: el FUENTE (.scad) y las specs (.md) SÍ van al repo; los STL y PNG
-# son artefactos generados (regenerables desde el .scad) -> quedan locales.
-case/*.stl
-case/*.png
-case_monojuan/*.stl
-case_monojuan/*.png
+# Config local de herramientas
+.claude/

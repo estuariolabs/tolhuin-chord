@@ -470,32 +470,3 @@ usuario (sin PSRAM de sobra con el looper), vocoder/flanger (no hay mic; scope).
               la sesión (SESS_VER 3: la sesión vieja se descarta UNA vez).
               54461 checks harmony (invariantes en todo el espacio + tabla
               puntual en Do mayor) + 157 DSP verdes; firmware 62%/74%.
-
-- [x] T14.2 — CONDUCCIÓN DE VOCES seleccionable (VoiceLeadMode), parámetro
-              INDEPENDIENTE del voicing/inversión. state.h: enum
-              VL_PARALLEL/VL_SMOOTH/VL_CHORALE/VL_CONTRARY + campo
-              app.voiceLeadMode (default VL_SMOOTH). harmony.cpp:
-              harmonyVoiceLeadMode(notes, n, rootPc, mode); harmonyVoiceLead()
-              queda como WRAPPER exacto de VL_SMOOTH (cuerpo histórico intacto ->
-              sin regresiones). Se aplica ANTES de harmonyApplyVoicing() y de la
-              octava global; todo entero/determinista, sin heap; el historial no
-              se mezcla entre algoritmos (cambiar de modo lo reinicia).
-              * VL_PARALLEL: ignora el previo, fundamental al bajo, bloques
-                cerrados centrados ~48-76 (posición fija estilo HiChord).
-              * VL_CHORALE/CONTRARY: búsqueda acotada por permutación de clases
-                sobre las voces (<=7!), registros interpolados (bajo 40-60 …
-                soprano 60-84), realización ascendente sin cruces, costos int32
-                nombrados (move/jump5-7-12, cruce, tono común, 5ta/8va paralela,
-                fuera de registro, bajo-sin-raíz, bonus contrario exterior).
-                CONTRARY sube el bonus contrario y penaliza el paralelo exterior.
-              UI: fila LEAD (PAR/SUAVE/CORAL/CONTRA) en una 2da página ARMONIA
-              (el OLED topa en 3 filas/página); el botón VOICING no la toca.
-              Web/serial: #lead 0..3 + campo "lead" en #state. Persiste en la
-              sesión (SESS_VER 4: v3 conserva sus ajustes y cae a VL_SMOOTH; el
-              padding nunca se lee como modo válido). Tests: nuevo
-              test/test_voicelead.cpp (2526 checks, los 12 puntos del pedido) +
-              54461 harmony + 206 DSP + 35 evloop verdes; firmware 64%/78%.
-- [x] T14.3 — FIX pin de HOLD: la placa vigente tiene HOLD en GPIO18 (cableado
-              original). El default TOLHUIN_HW_REV volvió a 1 (18); la REV 2
-              (desvío a GPIO6 por pad roto del prototipo del case) queda por flag
-              -DTOLHUIN_HW_REV=2. Banner: [input] hwrev=1 hold_gpio=18.

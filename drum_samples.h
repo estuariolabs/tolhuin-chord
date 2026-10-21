@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// TOLHUIN Chord.  Copyright (C) 2026 Mauro Restivo.
+// Distribuido bajo GPL-3.0-or-later; ver el archivo LICENSE.
+
 /* ============================================================================
    drum_samples.h  -  Samples de bateria (GENERADO por tools/gen_drum_samples.py
    desde tools/samples/*.wav, NO editar a mano). PCM int16 mono; en el ESP32

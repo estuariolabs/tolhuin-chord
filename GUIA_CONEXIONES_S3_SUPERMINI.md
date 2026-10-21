@@ -1,16 +1,14 @@
 # TOLHUIN — Guía de conexiones (ESP32-S3 SuperMini)
 
-> **Pinout ajustado a la placa REAL** (verificado con hardware en mano). El audio
-> (I2S 38/39/40) y el I2C (41/42) ya funcionan. Todo el **teclado** se mapeó dentro de
-> los pines que la placa expone y deja libres: **1-7 y 10-16** (la placa **no** saca
-> 21/47 y no hay 8/9/17/18/45 disponibles).
+> **Pinout ajustado a la placa REAL** (verificado con hardware en mano, prototipo 1
+> andando). El audio (I2S 38/39/40) y el I2C (41/42) ya funcionan, y el teclado usa
+> **8, 9, 17, 45, 5, 14, 10** + **18, 7, 11, 12, 13**. La placa **no** saca 21/47.
 >
-> El firmware de la carpeta [`flash/`](flash/) ya está compilado con este mapeo.
+> Este mapa es el que está en `config.h`: **las tablas de abajo mandan**. (Una versión
+> vieja de esta nota decía que 8/9/17/18/45 no estaban disponibles: es FALSO en esta
+> placa, el prototipo 1 los usa y funcionan.)
+>
 > Todo funciona a **3.3 V**. Masa (GND) **común** para todo.
->
-> ⚠️ **HOLD se movió de GPIO18 a GPIO6** (se rompió la pista/pad de 18 en el
-> prototipo del case nuevo). GPIO18 queda libre pero con el pad dañado en esa
-> unidad; no lo reutilices ahí.
 
 ## Mapa del teclado (según el cableado físico confirmado)
 | Señal | GPIO | | Señal | GPIO |
@@ -18,7 +16,7 @@
 | Tecla I   | **8**  | | Tecla VII | **10** |
 | Tecla II  | **9**  | | NAV−      | **11** |
 | Tecla III | **17** | | NAV+      | **12** |
-| Tecla IV  | **45** | | HOLD      | **6**  |
+| Tecla IV  | **45** | | HOLD      | **18** |
 | Tecla V   | **5**  | | VOICING   | **7**  |
 | Tecla VI  | **14** | | Joystick SW | **13** |
 
@@ -78,7 +76,7 @@ Salida: **LOUT / ROUT → jack 3.5 mm** (LOUT=tip, ROUT=ring, GND=sleeve).
 
 ### Los 11 botones (7 armónicos + 4 de función)
 Todos son **pulsadores a masa**: una pata al GPIO, la otra pata a **GND**.
-Usan pull-up interno (no necesitan resistencia externa). Caen en `{1-7, 10-16}` + GPIO45.
+Usan pull-up interno (no necesitan resistencia externa).
 
 | Botón | GPIO | Función |
 |-------|------|---------|
@@ -91,7 +89,7 @@ Usan pull-up interno (no necesitan resistencia externa). Caen en `{1-7, 10-16}` 
 | **VII** | **GPIO10** | grado VII |
 | **NAV−**    | GPIO11 | tónica −1 / navegar menú |
 | **NAV+**    | GPIO12 | tónica +1 / navegar menú |
-| **HOLD**    | **GPIO6**  | acorde sostenido |
+| **HOLD**    | **GPIO18** | acorde sostenido |
 | **VOICING** | GPIO7  | cicla inversiones / en menú: editar |
 
 ---
@@ -99,12 +97,12 @@ Usan pull-up interno (no necesitan resistencia externa). Caen en `{1-7, 10-16}` 
 ## 2. Todos los pines usados (checklist)
 
 **GPIO de señal (17):**
-`5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 17, 45, 38, 39, 40, 41, 42`
+`5, 7, 8, 9, 10, 11, 12, 13, 14, 17, 18, 45, 38, 39, 40, 41, 42`
 
 **Rieles:** `3V3` (alimenta OLED, ADS1115, joystick, PCM5102) y `GND` (común).
 
-**Reserva libre:** `1, 2, 3, 4, 15, 16` (y `18` en placas con el pad sano).
-**No usar en esta placa:** `48` (LED RGB onboard), `18` (pad roto en este prototipo).
+**Reserva libre:** `1, 2, 3, 4, 6, 15, 16`.
+**No usar en esta placa:** `48` (LED RGB onboard).
 **No usar nunca:** `33–37` (PSRAM del looper), `19/20` (USB), `43/44` (UART), `0/46` (strapping).
 
 ---
@@ -170,5 +168,50 @@ LiPo → TP4056 (carga+protección) → interruptor → buck-boost 3.3 V → rie
 3. Sumá el **joystick** y probá que el color cambie al moverlo.
 4. Sumá el **PCM5102 + jack** y tocá un botón armónico: debe sonar el acorde.
    Si no hay audio: confirmá **SCK del DAC a GND** y **XSMT a 3V3**.
-5. Sumá los botones (`{1-7,10-16}`) y verificá uno por uno con el menú/OLED.
+5. Sumá los botones y verificá uno por uno con el menú/OLED.
 6. Recién al final, la cadena de batería.
+
+---
+
+## 6. Variante SIN OLED (prototipo 2, case impreso en 3D)
+
+El firmware **no necesita la pantalla**: `oledInit()` sondea el bus por ACK en 0x3C y
+0x3D, y si no hay panel deja `ok=false` — todas las funciones de dibujo salen por su
+guarda y no se dibuja nada. Audio, botones, joystick, MIDI y menú siguen igual.
+
+**Qué cambia respecto de las tablas de arriba: nada.** Mismo pinout exacto.
+Simplemente **no se conecta** el OLED al bus I2C; el ADS1115 queda solo en 41/42.
+
+| Detalle | Sin OLED |
+|---------|----------|
+| SDA/SCL | **41 / 42** (igual), sólo el ADS colgando |
+| Pull-ups I2C | los suele traer el módulo ADS. **Si el ADS no los trae, agregá 4.7 kΩ a 3V3 en cada línea** — antes los podía estar poniendo el OLED |
+| ADDR del ADS | a **VDD** (0x49) como el prototipo 1; ver nota abajo |
+| GPIO liberados | ninguno (el OLED compartía 41/42) |
+
+> **El firmware ahora autodetecta la dirección del ADS** (prueba 0x49, 0x48, 0x4A,
+> 0x4B). Si en este módulo dejás ADDR a GND o al aire, el joystick **igual funciona**.
+> Al arrancar, el log dice cuál encontró: `[input] ADS present=1 addr=0x49`.
+
+### Lo único que se pierde
+El **menú de configuración** (8 páginas) y el feedback visual son "a ciegas": los
+botones NAV−/NAV+/VOICING siguen funcionando, pero no ves en qué fila estás. Para el
+prototipo sin pantalla conviene manejar la config desde el **webtool por USB** y dejar
+la sesión guardada en NVS (GUARDAR), que se restaura sola al encender.
+
+### Verificación al primer encendido (monitor serie 115200)
+```
+[i2c] scan: 0x49  (1 dispositivos)      <- sin OLED: NO debe aparecer 0x3C
+[input] ADS present=1 addr=0x49 centro x=... y=...
+[oled] panel NO detectado                <- esperado y correcto
+[boot] listo -> tocá un grado
+```
+Si aparece `ADS present=0`: revisá VDD/GND/SDA/SCL del ADS y los pull-ups.
+
+### ⚠️ Pads a verificar en CADA placa
+En la placa del prototipo 1, los pads **6, 14 y 17** dieron continuidad pero **no
+llegaban al chip** como entrada. El mapa actual usa **17 (grado III)** y **14 (grado
+VI)**. Al encender el prototipo 2, probá los 7 grados uno por uno: si III y/o VI no
+responden y el resto sí, es este defecto — no el cableado. Remapeo posible sin tocar
+nada más que `config.h` (línea del array `PIN_CHORD`), usando los libres: **1, 2, 3,
+4, 15, 16**.

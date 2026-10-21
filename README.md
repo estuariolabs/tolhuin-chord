@@ -5,28 +5,12 @@ propio (sin librerías externas de síntesis). Este repositorio es el **firmware
 completo + hardware + herramientas**; el desarrollo está publicado con fines de
 transparencia.
 
-## Novedades de v0.2.0
-
-- **HBRASS:** nuevo timbre de metales expresivo, desarrollado y optimizado para
-  el presupuesto de audio del ESP32-S3 sin reemplazar el BRASS original.
-- **Looper funcional:** grabación y reproducción de progresiones integrada con
-  el motor armónico, los timbres y la sesión del instrumento.
-- **Cuatro conducciones de voces:** `PARALELO`, `SUAVE`, `CORAL` y `CONTRARIO`.
-  Permiten elegir entre bloques directos, mínimo movimiento y transiciones de
-  carácter coral o contrapuntístico.
-- **Visualizador de voces:** la pestaña Acordes del editor web muestra la
-  distribución y el movimiento de las notas al cambiar de acorde o algoritmo.
-
-El firmware binario publicado con esta versión corresponde exclusivamente al
-**prototipo 1** (`TOLHUIN_HW_REV=1`). No debe usarse como referencia de pinout
-para otros armados sin revisar previamente `config.h` y la guía de conexiones.
-
 > Diatonic chord synthesizer on ESP32-S3 with a from-scratch audio engine
 > (band-limited synthesis, diatonic harmony, sequencer, effects, MIDI USB/BLE).
 
 **El motor puro** (la parte que compila en PC, sin hardware) también está como
 repo aparte, más fácil de reusar como librería:
-👉 https://github.com/radarapdadmin-netizen/tolhuin-chord-engine
+👉 https://github.com/estuariolabs/tolhuin-chord-engine
 
 ---
 

@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// TOLHUIN Chord.  Copyright (C) 2026 Mauro Restivo.
+// Distribuido bajo GPL-3.0-or-later; ver el archivo LICENSE.
+
 /* ============================================================================
    synth.h  -  Wrapper de hardware del motor de audio.
    Une el núcleo DSP puro (dsp.h) con el I2S del ESP32 y una tarea de render

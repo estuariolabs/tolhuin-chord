@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// TOLHUIN Chord.  Copyright (C) 2026 Mauro Restivo.
+// Distribuido bajo GPL-3.0-or-later; ver el archivo LICENSE.
+
 /* ============================================================================
    dsp.h  -  Núcleo de síntesis PURO (sin hardware).
    Osciladores, envolventes, filtro, render por muestra y mezcla.
@@ -21,14 +25,10 @@ enum Timbre {
   T_SINE, T_TRIANGLE, T_ORGAN,        // paleta extendida (T4.1)
   T_FLUTE,                            // flauta aditiva + aliento (estilo HiChord)
   T_WAVE,                             // wavetable MORPHING: 4 frames, barrido por la env de filtro
-  T_HBRASS,                           // brass HiChord experimental: saw BLEP + waveshaping de bajo costo
-  T_EPIANO_B,                         // Rhodes balanceado: tine integrado, mayor presencia
-  T_EPIANO_C,                         // Dyno brillante: ataque metálico y cola definida
   T_USER1, T_USER2, T_USER3,          // timbres de USUARIO: familia de oscilador
   T_USER4, T_USER5, T_USER6,          // elegible (EnvCfg.family) + params libres
   T_COUNT
 };
-static constexpr uint8_t T_ENGINE_COUNT = T_HBRASS + 1; // motores DSP reales; B/C reutilizan EPIANO
 
 // Cantidad de patrones de batería: 0=off, 1..3 fábrica, 4..11 editables (usuario).
 #define DRUM_PATTERNS 12
@@ -136,12 +136,10 @@ struct DelayStereo {
   int   dL = 1, dR = 1;     // retardo por canal en muestras
   float fb = 0.0f;          // realimentación 0..<1
   float mix = 0.0f;         // mezcla húmeda 0..1
-  float fbLpL = 0.0f, fbLpR = 0.0f; // damping de repeticiones ping-pong
   void  setParams(float timeMs, float feedback, float mixAmt, float sr);
   void  setTime(float timeMs, float sr);                     // sólo el tiempo (dL, dR)
   void  process(float inMono, float& outL, float& outR);     // dry+eco (crossfade)
   void  processWet(float inMono, float& wetL, float& wetR);   // sólo eco*mix (send)
-  void  processWetPingPong(float inL, float inR, float& wetL, float& wetR);
   void  reset();
 };
 
@@ -164,7 +162,6 @@ struct Reverb {
   float mix = 0.0f;   // nivel de cola húmeda 0..1
   void  setParams(float roomSize, float damping, float mixAmt);
   float process(float in);   // devuelve la cola húmeda * mix
-  void  processStereo(float in, float& wetL, float& wetR);
   void  reset();
 };
 
@@ -215,7 +212,6 @@ void dspSetChorus(bool on, float rateHz, float depthMs, float mix);
 // --- Reverb editable (web-config) ---
 // roomSize ~0..1 (tamaño de sala), damping 0..1 (oscurece la cola), mix 0..1.
 void dspSetReverb(float roomSize, float damping, float mix);
-void dspSetFxMode(uint8_t mode);  // 0=legacy, 1=ping-pong, 2=studio stereo
 
 // --- BODY: capa de "cuerpo/unísono" para acercar los timbres a un sample ---
 // Suma offsets de pitch por voz (sin tocar los osciladores): detune fijo por voz

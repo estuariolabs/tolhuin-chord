@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// TOLHUIN Chord.  Copyright (C) 2026 Mauro Restivo.
+// Distribuido bajo GPL-3.0-or-later; ver el archivo LICENSE.
+
 /* ============================================================================
    synth.cpp  -  Wrapper de hardware: I2S (ESP_I2S) + tarea FreeRTOS (núcleo 0)
    + cola de eventos. Toda la síntesis vive en dsp.cpp (puro). Acá sólo:
@@ -196,7 +200,7 @@ uint32_t synthSamplePos() { return gSampleCount; }
 void synthPerfStats(uint32_t* maxUs, uint32_t* lateBlocks, bool reset) {
   if (maxUs)      *maxUs = gPerfMaxUs;
   if (lateBlocks) *lateBlocks = gPerfLate;
-  if (reset) { gPerfMaxUs = 0; gPerfLate = 0; }
+  if (reset)      gPerfMaxUs = 0;      // el contador de lates es acumulativo
 }
 
 static inline void sendEvt(uint8_t type, uint8_t note, uint8_t t,
@@ -344,15 +348,13 @@ void synthDrumsSet(int pattern, float bpm) { drumPat = pattern; gDrumBpm = bpm; 
 bool synthDrums() { return drumPat > 0; }
 
 // Volumen general de la batería (0..1). El get lee directo del DSP (benigno).
-void  synthDrumsSetGain(float g) { if (g < 0) g = 0; if (g > 1.0f) g = 1.0f; gDrumGainStage = g; sendEvt(34, 0, 0); }
+void  synthDrumsSetGain(float g) { gDrumGainStage = g; sendEvt(34, 0, 0); }
 float synthDrumsGain()           { return dspDrumsGain(); }
 // Volúmenes de synth y sub-bajo. El getter devuelve el valor STAGEADO (inmediato,
 // sin esperar a que el evento drene) -> el menú puede leer-modificar-escribir bien.
-// Volúmenes: atenuadores 0..100% (no amplifican: subir de 1.0 satura el PAM8403).
-// El clamp acá también sanea un valor viejo de NVS cargado por encima de 1.0.
-void  synthSetSynthGain(float g) { if (g < 0) g = 0; if (g > 1.0f) g = 1.0f; gSynthGainStage = g; sendEvt(41, 0, 0); }
+void  synthSetSynthGain(float g) { gSynthGainStage = g; sendEvt(41, 0, 0); }
 float synthSynthGain()           { return gSynthGainStage; }
-void  synthSetBassGain(float g)  { if (g < 0) g = 0; if (g > 1.0f) g = 1.0f; gBassGainStage = g;  sendEvt(42, 0, 0); }
+void  synthSetBassGain(float g)  { gBassGainStage = g;  sendEvt(42, 0, 0); }
 float synthBassGain()            { return gBassGainStage; }
 
 // Motor de la batería: true = samples PCM de flash, false = sintetizada.

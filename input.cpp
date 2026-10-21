@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// TOLHUIN Chord.  Copyright (C) 2026 Mauro Restivo.
+// Distribuido bajo GPL-3.0-or-later; ver el archivo LICENSE.
+
 /* ============================================================================
    input.cpp  -  Controles físicos (capa de hardware). Portado del MVP.
    Botones activo-bajo (INPUT_PULLUP) con antirrebote. Joystick HW-504 vía
@@ -120,7 +124,6 @@ static const ColorZone SECTOR[8] = {
 };
 
 void inputInit() {
-  Serial.printf("[input] hwrev=%d hold_gpio=%d\n", TOLHUIN_HW_REV, PIN_HOLD);
   for (int i = 0; i < PIN_CHORD_COUNT; i++) {
     pinMode(PIN_CHORD[i], INPUT_PULLUP);
     pressed[i] = false; lastRaw[i] = false; lastChange[i] = 0;
@@ -179,12 +182,6 @@ static void pollJoystick() {
 
   int16_t rx = ads.readADC_SingleEnded(0);
   int16_t ry = ads.readADC_SingleEnded(1);
-  // --- DEBUG TEMPORAL de bring-up: valores crudos del ADS por serie (1/s). ---
-  // Sacar cuando el joystick del prototipo 2 esté verificado.
-  { static uint32_t dbgMs = 0;
-    if (millis() - dbgMs > 1000) { dbgMs = millis();
-      Serial.printf("[joy] A0=%d A1=%d  centro x=%d y=%d  rango x[%d..%d] y[%d..%d]\n",
-                    rx, ry, jcx, jcy, jxMin, jxMax, jyMin, jyMax); } }
 #if JOY_SWAP_XY
   { int16_t t = rx; rx = ry; ry = t; }          // ejes cruzados -> intercambia las lecturas
 #endif

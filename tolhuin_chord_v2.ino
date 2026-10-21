@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// TOLHUIN Chord.  Copyright (C) 2026 Mauro Restivo.
+// Distribuido bajo GPL-3.0-or-later; ver el archivo LICENSE.
+
 /* ============================================================================
    TOLHUIN CHORD  -  Sintetizador de acordes diatónicos (motor propio, sin AMY)
    ----------------------------------------------------------------------------
@@ -173,30 +177,24 @@ static void playCurrent(bool fromLoop = false) {
     synthArpPlay(seq, sn);
     return;
   }
-  // Pipeline ÚNICO (compartido con #degree): chordJoy -> voice leading (modo) ->
-  // voicing -> octava. Reconstruye desde el estado para no divergir del web.
-  n = harmonyBuildVoiced(app.degree, app.zone, app.tonic, app.mode, app.preset,
-                         app.chordQual[app.degree % 7], app.joyMap,
-                         (VoiceLeadMode)app.voiceLeadMode, app.voicing, oct, notes);
+  n = harmonyVoiceLead(notes, n);                      // planeo: mínima distancia
+  n = harmonyApplyVoicing(notes, n, app.voicing);      // inversión / abierta
+  n = harmonyApplyOctave(notes, n, oct);               // octava efectiva (-1..+2)
 
   // El ACORDE: en vivo con el timbre activo; desde el loop, con el que se grabó.
   synthPlaySet(notes, n, fromLoop ? loopTimbre : (uint8_t)255);
 
   // BAJO: raíz del grado en registro grave, como VOZ DEDICADA (no se mezcla con
   // el acorde). Si hay un grado sostenido, su raíz es el bajo (slash/inversión).
-  // Con subBass -> sine, salvo HBRASS E: usa su bajo armónico atenuado en DSP
-  // para poner el cuerpo en 125–250 Hz. El resto conserva el comportamiento actual.
+  // Con subBass -> sine (el "bass role" del HiChord); si no, el timbre del acorde.
   int bd = (app.bassDegree >= 0) ? app.bassDegree : (int)app.degree;
   uint8_t bt[MAX_CHORD_NOTES];
   harmonyChord((uint8_t)bd, CZ_CENTER, app.tonic, app.mode, bt);
   int bass = (int)bt[0] + 12 * oct;
   while (bass > 47)      bass -= 12;                   // registro de bajo (~36..47)
   while (bass < MIDI_LO) bass += 12;
-  uint8_t chordTimbre = fromLoop ? loopTimbre : synthTimbre();
-  uint8_t bassTimbre = app.subBass
-      ? (chordTimbre == T_HBRASS ? (uint8_t)T_HBRASS : (uint8_t)T_SINE)
-      : chordTimbre;
-  synthSetBass(bass, bassTimbre);
+  synthSetBass(bass, app.subBass ? (uint8_t)T_SINE
+                                 : (fromLoop ? loopTimbre : synthTimbre()));
 
   uint8_t mo[MAX_CHORD_NOTES + 1];                      // MIDI out: acorde + bajo
   for (uint8_t i = 0; i < n; i++) mo[i] = notes[i];
@@ -217,7 +215,7 @@ static void playCurrent(bool fromLoop = false) {
 enum FxItem {
   FX_TIMBRE = 0, FX_BODY, FX_RANDOM,        // SONIDO
   FX_KEY, FX_MODE, FX_PRESET,               // ARMONIA
-  FX_LEAD, FX_JOYMAP,                       // ARMONIA-2 (conducción de voces + mapa del stick)
+  FX_JOYMAP,                                // JOYSTICK (mapa de zonas del stick)
   FX_BPM, FX_DRUMS, FX_DRUMPAT,             // RITMO (DRUMS = on/off instantáneo)
   FX_ARP, FX_ARPSEL,                        // ARP   (ARP = on/off, ARPSEL = preset)
   FX_LREC, FX_LPLAY, FX_LCLR,               // LOOPER (eventos: rec / play-stop / clear)
@@ -231,14 +229,13 @@ enum FxItem {
 };
 // Nombres largos (log serial) y CORTOS (filas del OLED, <=3 chars).
 static const char* FX_NAME[FX_COUNT] =
-  { "TIMBRE", "BODY", "RANDOM", "KEY", "MODE", "RIQUEZA", "CONDUCCION", "JOY MAP",
-    "BPM", "DRUMS",
+  { "TIMBRE", "BODY", "RANDOM", "KEY", "MODE", "RIQUEZA", "JOY MAP", "BPM", "DRUMS",
     "PATRON", "ARP", "ARP PRESET", "LOOP REC", "LOOP PLAY", "LOOP CLEAR", "CANAL",
     "GRABAR HITS", "OCTAVE", "MONO", "GLIDE", "SUSTAIN", "DELAY",
     "CHORUS", "VOL SYNTH", "VOL SUB", "VOL DRUMS",
     "TREMOLO", "CLK OUT", "METRONOMO", "GUARDAR", "CARGAR" };
 static const char* FX_SHORT[FX_COUNT] =
-  { "TIM", "BDY", "RND", "KEY", "MOD", "RIQ", "LED", "JOY", "BPM", "DRM", "PAT",
+  { "TIM", "BDY", "RND", "KEY", "MOD", "RIQ", "JOY", "BPM", "DRM", "PAT",
     "ARP", "PRE", "REC", "PLY", "CLR", "CHN", "GRB", "OCT", "MON", "GLI", "SUS", "DLY", "CHO",
     "vSY", "vSU", "vDR",
     "TRM", "CLK", "MET", "GRD", "CRG" };
@@ -247,7 +244,7 @@ struct FxPage { const char* title; uint8_t first, count; };
 static const FxPage FX_PAGES[] = {
   { "SONIDO",   FX_TIMBRE,  3 },
   { "ARMONIA",  FX_KEY,     3 },
-  { "ARMONIA",  FX_LEAD,    2 },   // 2da página: CONDUCCION (LEAD) + JOY MAP
+  { "JOYSTICK", FX_JOYMAP,  1 },
   { "RITMO",    FX_BPM,     3 },
   { "ARP",      FX_ARP,     2 },
   { "LOOPER",   FX_LREC,    3 },
@@ -265,8 +262,6 @@ static uint32_t menuLastMs = 0;    // último toque (para el timeout)
 static uint8_t  menuDelay = 2;     // 0=off, 1=1/16, 2=1/8, 3=1/8., 4=1/4 (boot = 1/8, ver applyDelay)
 
 static const char* PRESET_NAME[HP_COUNT] = { "TRIADA", "7ma", "9na", "6/9" };
-// Conducción de voces (VoiceLeadMode): etiquetas compactas para el OLED.
-static const char* LEAD_NAME[VL_COUNT] = { "PAR", "SUAVE", "CORAL", "CONTRA" };
 // Mapas de joystick (<=6 chars: la fila del OLED muestra "%.6s").
 static const char* JOYMAP_NAME[JM_COUNT] = { "DEFLT", "HICHRD", "MINI" };
 static uint32_t fxSavedMs  = 0x80000000u;   // últimos GUARDAR/CARGAR (feedback "ok!")
@@ -303,7 +298,6 @@ static void fxValue(int it, char* buf) {
     case FX_BPM:     sprintf(buf, "%u", app.bpm); break;
     case FX_MODE:    strcpy(buf, app.mode == MODE_IONIAN ? "MAJ" : "min"); break;
     case FX_PRESET:  strcpy(buf, PRESET_NAME[app.preset % HP_COUNT]); break;
-    case FX_LEAD:    strcpy(buf, LEAD_NAME[app.voiceLeadMode % VL_COUNT]); break;
     case FX_JOYMAP:  strcpy(buf, JOYMAP_NAME[app.joyMap % JM_COUNT]); break;
     case FX_CLOCK:   strcpy(buf, app.clockOut ? "out" : "off"); break;
     case FX_DRUMS:   strcpy(buf, app.drumsOn ? "on" : "off"); break;
@@ -361,13 +355,6 @@ static void fxApply(int it, int dir) {
       app.preset = (uint8_t)((app.preset + dir + HP_COUNT) % HP_COUNT);
       if (chordActive) playCurrent();
       break;
-    case FX_LEAD:
-      // Conducción de voces: PAR/SUAVE/CORAL/CONTRA. Cambiar de algoritmo
-      // reinicia el historial (no se mezcla entre modos).
-      app.voiceLeadMode = (uint8_t)((app.voiceLeadMode + dir + VL_COUNT) % VL_COUNT);
-      harmonyVoiceLeadReset();
-      if (chordActive) playCurrent();
-      break;
     case FX_JOYMAP:
       app.joyMap = (uint8_t)((app.joyMap + dir + JM_COUNT) % JM_COUNT);
       if (chordActive) playCurrent();
@@ -390,15 +377,15 @@ static void fxApply(int it, int dir) {
       app.tremMode = (uint8_t)((app.tremMode + dir + 4) % 4);
       applyTremolo();
       break;
-    case FX_VSYNTH: {                              // volumen de synth (voces): 0..100% (atenúa)
+    case FX_VSYNTH: {                              // volumen de synth (voces): 0..150%
       float g = synthSynthGain() + dir * 0.1f;
-      if (g < 0.0f) g = 0.0f; if (g > 1.0f) g = 1.0f;
+      if (g < 0.0f) g = 0.0f; if (g > 1.5f) g = 1.5f;
       synthSetSynthGain(g);
       break;
     }
-    case FX_VSUB: {                                // volumen del sub-bajo: 0..100% (atenúa)
+    case FX_VSUB: {                                // volumen del sub-bajo: 0..150%
       float g = synthBassGain() + dir * 0.1f;
-      if (g < 0.0f) g = 0.0f; if (g > 1.0f) g = 1.0f;
+      if (g < 0.0f) g = 0.0f; if (g > 1.5f) g = 1.5f;
       synthSetBassGain(g);
       break;
     }
@@ -635,7 +622,6 @@ void setup() {
   app.bassDegree = -1;
   for (int i = 0; i < 7; i++) app.chordQual[i] = CQ_DIATONIC;
   app.channel = CH_CHORDS;       // los switches tocan acordes (fila CANAL lo cambia)
-  app.voiceLeadMode = VL_SMOOTH; // conducción histórica por defecto (fila LEAD)
   app.metro = false;             // metrónomo apagado (fila MET de SYNC)
 
   if (!synthInit()) {
@@ -673,12 +659,10 @@ void loop() {
     if (nowP - perfMs >= 5000) {
       perfMs = nowP;
       uint32_t mx, late;
-      synthPerfStats(&mx, &late, false);         // #perf reset controla la ventana
-      if (late < lateSeen) lateSeen = 0;         // reset explícito desde la web/USB
+      synthPerfStats(&mx, &late, true);          // resetea el max de la ventana
       if (late != lateSeen) {
         Serial.printf("[perf] bloques tarde=%lu (+%lu)  peor=%lu us (presup. 5805)\n",
-                      (unsigned long)late, (unsigned long)(late - lateSeen),
-                      (unsigned long)mx);
+                      (unsigned long)late, (unsigned long)(late - lateSeen), (unsigned long)mx);
         lateSeen = late;
       }
     }

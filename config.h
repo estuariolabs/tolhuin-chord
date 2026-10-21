@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// TOLHUIN Chord.  Copyright (C) 2026 Mauro Restivo.
+// Distribuido bajo GPL-3.0-or-later; ver el archivo LICENSE.
+
 /* ============================================================================
    config.h  -  Pines, direcciones y constantes globales. Sin lógica.
    Host-safe: sólo #defines y stdint (lo incluye también el núcleo DSP en host).
@@ -26,21 +30,10 @@
 // Teclado según el cableado FÍSICO confirmado por el usuario:
 //   I=8, II=9, III=17, IV=45, V=5, VI=14, VII=10 ; HOLD=18.
 // GPIO45 (Tecla IV) es pin de strapping: SEGURO como botón a GND (sin pull-up externo).
-// HOLD está en GPIO18 (cableado original) en la placa vigente: la REV 1 es el
-// build por defecto. La REV 2 (desvío a GPIO6) quedó para el prototipo del case
-// nuevo que tenía el pad/pista de GPIO18 roto; se selecciona por flag de build:
-//   compiler.cpp.extra_flags=-DTOLHUIN_HW_REV=2
-#ifndef TOLHUIN_HW_REV
-#define TOLHUIN_HW_REV 1
-#endif
 static const uint8_t PIN_CHORD[PIN_CHORD_COUNT] = {8, 9, 17, 45, 5, 14, 10}; // grados I..vii
 #define PIN_NAV_MINUS  11      // NAV- : tónica -1 semitono
 #define PIN_NAV_PLUS   12      // NAV+ : tónica +1 semitono
-#if TOLHUIN_HW_REV == 1
-#define PIN_HOLD       18      // prototipo 1: cableado físico original
-#else
-#define PIN_HOLD       6       // prototipo 2: pad GPIO18 dañado, desvío a GPIO6
-#endif
+#define PIN_HOLD       18      // HOLD : acorde sostenido
 #define PIN_VOICING    7       // VOICING: cicla disposición (inversiones)
 #define PIN_JOY_SW     13      // click del joystick (TAP=timbre / sostenido+gesto=modo)
 

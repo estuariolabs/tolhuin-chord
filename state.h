@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// TOLHUIN Chord.  Copyright (C) 2026 Mauro Restivo.
+// Distribuido bajo GPL-3.0-or-later; ver el archivo LICENSE.
+
 #pragma once
 
 #ifdef ARDUINO
@@ -40,19 +44,6 @@ enum Mode : uint8_t {
 enum ChordQual : uint8_t {
     CQ_DIATONIC = 0,    // sin forzar: acorde diatónico normal
     CQ_DOM7     = 1     // dominante 7 (mayorizado): R 3M 5J b7
-};
-
-// Modo de CONDUCCIÓN DE VOCES (voice leading). Es un parámetro INDEPENDIENTE del
-// voicing/inversión (`Voicing`): decide CÓMO se distribuyen las voces del acorde
-// en el registro (y su relación con el acorde anterior), y se aplica ANTES del
-// voicing y de la octava global. VL_SMOOTH es el algoritmo histórico de TOLHUIN
-// (mínima distancia + tonos comunes) y es el valor por defecto / de compatibilidad.
-enum VoiceLeadMode : uint8_t {
-    VL_PARALLEL = 0,   // bloques/posición fija estilo HiChord (ignora el previo)
-    VL_SMOOTH,         // mínima distancia + retención de tonos comunes (histórico)
-    VL_CHORALE,        // 4 voces ordenadas, sin cruces, registros corales
-    VL_CONTRARY,       // como CHORALE pero favorece movimiento contrario exterior
-    VL_COUNT
 };
 
 // Mapa del joystick: cómo las 9 zonas colorean/transforman el acorde (fila JOY
@@ -106,5 +97,4 @@ struct AppState {
     uint8_t   chordQual[7]; // calidad forzada por grado (CQ_DIATONIC/CQ_DOM7), SW+stick
     uint8_t   channel;      // Channel: qué tocan los 7 switches (fila CANAL del menú)
     bool      metro;        // metrónomo (click sync BPM, fila MET de SYNC)
-    uint8_t   voiceLeadMode;// VoiceLeadMode: conducción de voces (fila LEAD, ARMONIA)
 };

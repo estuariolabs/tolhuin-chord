@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// TOLHUIN Chord.  Copyright (C) 2026 Mauro Restivo.
+// Distribuido bajo GPL-3.0-or-later; ver el archivo LICENSE.
+
 /* ============================================================================
    test_harmony.cpp  -  Test de host del motor de armonia (sin hardware).
    harmony.cpp es C++ puro: se compila en la PC y se verifican las reglas duras.

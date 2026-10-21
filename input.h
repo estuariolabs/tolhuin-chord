@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// TOLHUIN Chord.  Copyright (C) 2026 Mauro Restivo.
+// Distribuido bajo GPL-3.0-or-later; ver el archivo LICENSE.
+
 /* ============================================================================
    input.h  -  Lectura de controles físicos (capa de hardware).
    7 botones de grado diatónico + HOLD + VOICING + NAV-/NAV+ (navegación y

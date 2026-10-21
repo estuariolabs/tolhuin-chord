@@ -60,15 +60,8 @@ Core ESP32 3.2.0 y libs Adafruit (GFX, SSD1306, BusIO, ADS1X15) ya instalados.
 2. **Ningún acorde dominante**: no puede coexistir una 3ra mayor con una 7ma menor (b7).
 3. Sin **b9** (intervalo 13 sobre la raíz), sin **b2** (intervalo 1).
 4. Cantidad de notas en [1, MAX_CHORD_NOTES].
-5. Voice leading: registro MIDI 36–91. La CONDUCCIÓN es un parámetro
-   INDEPENDIENTE del voicing/inversión (`VoiceLeadMode`, fila LEAD, campo
-   `app.voiceLeadMode`, default `VL_SMOOTH`): `VL_SMOOTH` (histórico: mínimo
-   movimiento + tonos comunes), `VL_PARALLEL` (bloques/posición fija, ignora el
-   previo), `VL_CHORALE` y `VL_CONTRARY` (4 voces sin cruces, búsqueda acotada
-   por costos). `harmonyVoiceLead()` = wrapper de `VL_SMOOTH`;
-   `harmonyVoiceLeadMode()` selecciona. Se aplica ANTES de `harmonyApplyVoicing`
-   y de la octava global; entero/determinista; el historial no se mezcla entre
-   algoritmos. Web/serial: `#lead 0..3`, campo `lead` en `#state`.
+5. Voice leading: registro MIDI 36–91, conducción por mínimo movimiento con
+   retención de tonos comunes (salto de bajo chico entre acordes).
 
 ### Arquitectura
 - **No AMY**: el motor de síntesis es propio (`dsp.h/.cpp`). El sketch `diag_amy_min` existe sólo como referencia histórica.
@@ -229,13 +222,6 @@ arpegiador completo con editor y scale-run, webtool retro con paquetes
 - **Iconos OLED** (`icons.h`, GENERADO por `tools/gen_icons.py` — el arte se
   edita ALLÍ como grillas ASCII): 11 estados 10x10 + 11 páginas 12x12 (el orden
   de IC_PAGE sigue a FX_PAGES).
-- **Conducción de voces seleccionable** (`VoiceLeadMode`, fila LEAD en una 2da
-  página ARMONIA — el OLED topa en 3 filas/página): PAR/SUAVE/CORAL/CONTRA,
-  independiente del voicing. Ver la regla 5 de Armonía. Persiste en la sesión
-  (`SESS_VER 4`, migración compatible desde v3). Tests: `test/test_voicelead.cpp`.
-- **HOLD en GPIO18** (cableado original): el default `TOLHUIN_HW_REV` es 1. La
-  REV 2 (desvío a GPIO6 por el pad roto del case nuevo) queda por flag de build
-  `-DTOLHUIN_HW_REV=2`. Banner: `[input] hwrev=1 hold_gpio=18`.
 - **Flasheo**: la placa NO acepta auto-reset — BOOT+RESET manual y aparece en
   **COM11** (`--upload -p COM11`). Banner de versión: `fw=tolhuin-4.0`.
 
