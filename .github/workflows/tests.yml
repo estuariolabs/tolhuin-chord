@@ -1,0 +1,26 @@
+name: Tests
+on:
+  push:
+  pull_request:
+jobs:
+  host:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sh test/run_tests.sh
+      - run: CXXFLAGS="-g -fsanitize=address,undefined -fno-sanitize-recover=undefined" sh test/run_tests.sh
+      - run: python3 pcb/gen_netlist.py && git diff --exit-code pcb/out && python3 test/test_pinout.py
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: tolhuin_chord_v2
+      - uses: arduino/setup-arduino-cli@v2
+      - run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32@3.2.0
+          arduino-cli lib install "Adafruit GFX Library" "Adafruit SSD1306" "Adafruit ADS1X15" "Adafruit TinyUSB Library" "NimBLE-Arduino"
+      - run: arduino-cli compile --fqbn "esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=cdc,PSRAM=opi" tolhuin_chord_v2

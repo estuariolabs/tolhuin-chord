@@ -1,16 +1,14 @@
 # TOLHUIN — Guía de conexiones (ESP32-S3 SuperMini)
 
 > **Pinout ajustado a la placa REAL** (verificado con hardware en mano). El audio
-> (I2S 38/39/40) y el I2C (41/42) ya funcionan. Todo el **teclado** se mapeó dentro de
-> los pines que la placa expone y deja libres: **1-7 y 10-16** (la placa **no** saca
-> 21/47 y no hay 8/9/17/18/45 disponibles).
+> (I2S 38/39/40) y el I2C (41/42) ya funcionan. La fuente de verdad de los pines es
+> [`config.h`](config.h); esta guía describe el **prototipo 1** (`TOLHUIN_HW_REV=1`),
+> que es el firmware publicado en la v0.2.0.
 >
-> El firmware de la carpeta [`flash/`](flash/) ya está compilado con este mapeo.
 > Todo funciona a **3.3 V**. Masa (GND) **común** para todo.
 >
-> ⚠️ **HOLD se movió de GPIO18 a GPIO6** (se rompió la pista/pad de 18 en el
-> prototipo del case nuevo). GPIO18 queda libre pero con el pad dañado en esa
-> unidad; no lo reutilices ahí.
+> ⚠️ **HOLD va en GPIO18.** Sólo el prototipo 2, con ese pad roto, usa GPIO6 y se
+> compila con `-DTOLHUIN_HW_REV=2`.
 
 ## Mapa del teclado (según el cableado físico confirmado)
 | Señal | GPIO | | Señal | GPIO |
@@ -18,7 +16,7 @@
 | Tecla I   | **8**  | | Tecla VII | **10** |
 | Tecla II  | **9**  | | NAV−      | **11** |
 | Tecla III | **17** | | NAV+      | **12** |
-| Tecla IV  | **45** | | HOLD      | **6**  |
+| Tecla IV  | **45** | | HOLD      | **18** |
 | Tecla V   | **5**  | | VOICING   | **7**  |
 | Tecla VI  | **14** | | Joystick SW | **13** |
 
@@ -91,7 +89,7 @@ Usan pull-up interno (no necesitan resistencia externa). Caen en `{1-7, 10-16}` 
 | **VII** | **GPIO10** | grado VII |
 | **NAV−**    | GPIO11 | tónica −1 / navegar menú |
 | **NAV+**    | GPIO12 | tónica +1 / navegar menú |
-| **HOLD**    | **GPIO6**  | acorde sostenido |
+| **HOLD**    | **GPIO18** | acorde sostenido |
 | **VOICING** | GPIO7  | cicla inversiones / en menú: editar |
 
 ---

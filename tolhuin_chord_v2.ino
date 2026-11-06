@@ -606,7 +606,7 @@ void setup() {
   Serial.begin(115200);
   delay(1200);
   // El sufijo de versión sirve para confirmar de un vistazo QUÉ firmware corre la
-  // placa: si no ves "fw=tolhuin-3.2" al arrancar, el flasheo no tomó.
+  // placa: si no ves "fw=tolhuin-4.0" al arrancar, el flasheo no tomó.
   Serial.println("\n[boot] TOLHUIN CHORD v2 - fw=tolhuin-4.0 (pantalla v2: zonas fijas + scope trigger; looper de eventos; timbre WAVE)");
 
   // Estado inicial: Do mayor, tríada, sin hold.

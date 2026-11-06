@@ -499,3 +499,8 @@ usuario (sin PSRAM de sobra con el looper), vocoder/flanger (no hay mic; scope).
               original). El default TOLHUIN_HW_REV volvió a 1 (18); la REV 2
               (desvío a GPIO6 por pad roto del prototipo del case) queda por flag
               -DTOLHUIN_HW_REV=2. Banner: [input] hwrev=1 hold_gpio=18.
+
+- [x] T15.1 — AUDITORÍA nov-2026: la netlist lee los pines de config.h (la copia
+              vieja tenía 7 de 11 botones mal y ADDR del ADS a GND); test_pinout.py
+              lo vigila. Versión del protocolo web alineada a 4.0, guía de conexiones
+              corregida, run_tests.sh para macOS/Linux y CI en GitHub Actions.

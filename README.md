@@ -26,7 +26,7 @@ para otros armados sin revisar previamente `config.h` y la guía de conexiones.
 
 **El motor puro** (la parte que compila en PC, sin hardware) también está como
 repo aparte, más fácil de reusar como librería:
-👉 https://github.com/radarapdadmin-netizen/tolhuin-chord-engine
+👉 https://github.com/estuariolabs/tolhuin-chord-engine
 
 ---
 
@@ -72,9 +72,12 @@ arduino-cli compile --fqbn "esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=cdc,PS
 
 **Tests del motor en host** (g++/clang++, sin hardware):
 
-```powershell
-powershell -ExecutionPolicy Bypass -File test\run_tests.ps1
+```bash
+sh test/run_tests.sh        # macOS y Linux
+python3 test/test_pinout.py # netlist de la PCB contra config.h
 ```
+
+En Windows: `powershell -ExecutionPolicy Bypass -File test\run_tests.ps1`.
 
 Verifican armonía, DSP (NaN/clip/RMS/Goertzel, timing de grilla, fase del reloj)
 y el secuenciador — todos deterministas.
