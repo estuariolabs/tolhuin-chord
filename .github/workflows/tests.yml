@@ -34,4 +34,16 @@ jobs:
         with:
           repository: estuariolabs/tolhuin-chord-engine
           path: engine
+          fetch-depth: 0
+      # Si el motor tiene una rama con el mismo nombre (cambio en curso en los
+      # dos repos), se compara contra ella; si no, contra su main.
+      - name: Elegir rama del motor
+        env:
+          RAMA: ${{ github.head_ref || github.ref_name }}
+        run: |
+          if git -C engine rev-parse --verify --quiet "origin/$RAMA" >/dev/null; then
+            git -C engine checkout -q "origin/$RAMA" && echo "motor: rama $RAMA"
+          else
+            echo "motor: main"
+          fi
       - run: python3 tools/sincronizar_engine.py engine --comprobar
