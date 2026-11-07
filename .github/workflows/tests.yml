@@ -24,3 +24,14 @@ jobs:
           arduino-cli core install esp32:esp32@3.2.0
           arduino-cli lib install "Adafruit GFX Library" "Adafruit SSD1306" "Adafruit ADS1X15" "Adafruit TinyUSB Library" "NimBLE-Arduino"
       - run: arduino-cli compile --fqbn "esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=cdc,PSRAM=opi" tolhuin_chord_v2
+  engine:
+    # Informativo: avisa si el repo público del motor quedó atrás del firmware.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: estuariolabs/tolhuin-chord-engine
+          path: engine
+      - run: python3 tools/sincronizar_engine.py engine --comprobar

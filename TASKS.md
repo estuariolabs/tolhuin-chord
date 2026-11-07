@@ -504,3 +504,7 @@ usuario (sin PSRAM de sobra con el looper), vocoder/flanger (no hay mic; scope).
               vieja tenía 7 de 11 botones mal y ADDR del ADS a GND); test_pinout.py
               lo vigila. Versión del protocolo web alineada a 4.0, guía de conexiones
               corregida, run_tests.sh para macOS/Linux y CI en GitHub Actions.
+- [x] T15.2 — Revisión de hallazgos (7/11): sale al boot la línea `[mem] psram=…`
+              para confirmar en placa si hay PSRAM (y si es OPI o quad). La dirección
+              del ADS1115 nunca rompió el joystick: input.cpp prueba 0x48–0x4B.
+              `tools/sincronizar_engine.py` copia el motor a tolhuin-chord-engine.

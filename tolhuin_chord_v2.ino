@@ -608,6 +608,10 @@ void setup() {
   // El sufijo de versión sirve para confirmar de un vistazo QUÉ firmware corre la
   // placa: si no ves "fw=tolhuin-4.0" al arrancar, el flasheo no tomó.
   Serial.println("\n[boot] TOLHUIN CHORD v2 - fw=tolhuin-4.0 (pantalla v2: zonas fijas + scope trigger; looper de eventos; timbre WAVE)");
+  // Diagnóstico de memoria: psram=0 con PSRAM=opi puede querer decir que la
+  // placa trae PSRAM quad (QSPI). Probar compilando con PSRAM=enabled.
+  Serial.printf("[mem] psram=%u libre_psram=%u heap_libre=%u\n",
+                (unsigned)ESP.getPsramSize(), (unsigned)ESP.getFreePsram(), (unsigned)ESP.getFreeHeap());
 
   // Estado inicial: Do mayor, tríada, sin hold.
   app.tonic = 0;
