@@ -17,7 +17,7 @@
 #include "midi.h"     // midiSendSysExText: respuestas por SysEx (transporte MIDI)
 #include "webcfg.h"
 
-#define WEBCFG_FW "tolhuin-3.2"
+#define WEBCFG_FW "tolhuin-4.0"
 
 extern AppState app;   // estado global del sketch (tonalidad, fx, voicing...)
 

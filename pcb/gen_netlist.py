@@ -14,28 +14,38 @@
 #  librería estándar de KiCad, así la importación funciona ya). Antes de fabricar,
 #  reemplazá el footprint del ESP32 y los módulos por el real (p.ej. DevKitC-1).
 # ============================================================================
-import csv, os
+import csv, os, re
 
-# ---- Pines del ESP32-S3 (deben coincidir con config.h del firmware) ----
-GPIO = {
-    "I2S_BCK": 38, "I2S_WS": 39, "I2S_DIN": 40,        # PCM5102A
-    "I2C_SDA": 41, "I2C_SCL": 42,                       # OLED + ADS1115
-    "BTN_I": 15, "BTN_II": 16, "BTN_III": 17, "BTN_IV": 18,
-    "BTN_V": 21, "BTN_VI": 47, "BTN_VII": 48,           # 7 grados
-    "NAV_MINUS": 11, "NAV_PLUS": 12, "HOLD": 14, "VOICING": 7,
-    "JOY_SW": 13,
-}
+# ---- Pines del ESP32-S3: se LEEN de config.h (prototipo 1, TOLHUIN_HW_REV=1) ----
+# Antes estaban copiados acá y quedaron desfasados del firmware: una placa
+# fabricada con esa netlist tenía 7 de los 11 botones en pines equivocados y el ADS1115 en otra dirección.
+def leer_config(ruta):
+    with open(ruta, encoding="utf-8") as f:
+        texto = f.read()
+    def define(nombre):
+        return int(re.search(rf"^\s*#define\s+{nombre}\s+(0x[0-9A-Fa-f]+|\d+)", texto, re.M).group(1), 0)
+    teclas = re.search(r"PIN_CHORD\[PIN_CHORD_COUNT\]\s*=\s*\{([^}]*)\}", texto).group(1)
+    grados = [int(n) for n in teclas.split(",")]
+    gpio = {
+        "I2S_BCK": define("PIN_I2S_BCK"), "I2S_WS": define("PIN_I2S_WS"), "I2S_DIN": define("PIN_I2S_DOUT"),
+        "I2C_SDA": define("PIN_I2C_SDA"), "I2C_SCL": define("PIN_I2C_SCL"),
+        "NAV_MINUS": define("PIN_NAV_MINUS"), "NAV_PLUS": define("PIN_NAV_PLUS"),
+        "HOLD": define("PIN_HOLD"),      # 1.er #define = rama TOLHUIN_HW_REV == 1
+        "VOICING": define("PIN_VOICING"), "JOY_SW": define("PIN_JOY_SW"),
+    }
+    for nombre, pin in zip(("BTN_I", "BTN_II", "BTN_III", "BTN_IV", "BTN_V", "BTN_VI", "BTN_VII"), grados):
+        gpio[nombre] = pin
+    return gpio, define("ADS_ADDR")
+
+CONFIG_H = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config.h")
+GPIO, ADS_ADDR = leer_config(CONFIG_H)
+ADS_ADDR_NET = {0x48: "GND", 0x49: "3V3"}[ADS_ADDR]   # ADDR a VDD = 0x49
 
 # ---- Componentes: ref -> (value, lista ORDENADA de pines) ----
 # El número de pad = posición en la lista (1..N). El footprint por defecto es un
 # header 1xN; cambialo por el módulo real cuando lo tengas.
 COMPONENTS = {
-    "U1": ("ESP32-S3-DevKitC-1", [
-        "GPIO38","GPIO39","GPIO40","GPIO41","GPIO42",
-        "GPIO15","GPIO16","GPIO17","GPIO18","GPIO21","GPIO47","GPIO48",
-        "GPIO11","GPIO12","GPIO14","GPIO7","GPIO13",
-        "3V3","GND",
-    ]),
+    "U1": ("ESP32-S3-SuperMini", [f"GPIO{g}" for g in sorted(set(GPIO.values()))] + ["3V3", "GND"]),
     "U2": ("PCM5102A", ["VIN","GND","BCK","DIN","LCK","SCK","FMT","XSMT","FLT","DEMP","LOUT","ROUT"]),
     "U3": ("ADS1115",  ["VDD","GND","SCL","SDA","ADDR","A0","A1"]),
     "U4": ("SSD1306-OLED", ["GND","VCC","SCL","SDA"]),
@@ -94,11 +104,12 @@ def build_nets():
         r,p = n.split(":"); add("3V3", r, p)
     # GND común (incluye SCK/FLT/DEMP/FMT del DAC, ADDR del ADS y la rama de poder)
     for n in ["U1:GND","U2:GND","U2:SCK","U2:FMT","U2:FLT","U2:DEMP",
-              "U3:GND","U3:ADDR","U4:GND","U5:GND","J1:SLEEVE",
+              "U3:GND","U4:GND","U5:GND","J1:SLEEVE",
               "U6:OUT-","U7:VIN-","U7:VOUT-",
               "C1:2","C2:2","C3:2","C4:2","C5:2","C6:2","C7:2"]:
         r,p = n.split(":"); add("GND", r, p)
     for sw in BTN: add("GND", sw, "B")          # otro lado de cada botón
+    add(ADS_ADDR_NET, "U3", "ADDR")             # dirección I2C del ADS1115 según config.h
 
     # Cadena de alimentación por batería
     add("BAT_P","BT1","+");    add("BAT_P","U6","BAT+")     # LiPo + -> cargador

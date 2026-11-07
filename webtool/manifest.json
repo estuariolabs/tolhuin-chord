@@ -1,6 +1,6 @@
 {
   "name": "TOLHUIN Chord",
-  "version": "1.0",
+  "version": "0.2.0",
   "new_install_prompt_erase": false,
   "builds": [
     {

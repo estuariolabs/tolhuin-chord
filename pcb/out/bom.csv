@@ -6,7 +6,7 @@ value,qty,refs,footprint
 ADS1115,1,U3,Connector_PinHeader_2.54mm:PinHeader_1x07_P2.54mm_Vertical
 AudioJack-3.5mm,1,J1,Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical
 BuckBoost-3V3,1,U7,Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical
-ESP32-S3-DevKitC-1,1,U1,Connector_PinHeader_2.54mm:PinHeader_1x19_P2.54mm_Vertical
+ESP32-S3-SuperMini,1,U1,Connector_PinHeader_2.54mm:PinHeader_1x19_P2.54mm_Vertical
 Joystick-HW504,1,U5,Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical
 LiPo-3V7,1,BT1,Connector_JST:JST_PH_B2B-PH-K_1x02_P2.00mm_Vertical
 PCM5102A,1,U2,Connector_PinHeader_2.54mm:PinHeader_1x12_P2.54mm_Vertical

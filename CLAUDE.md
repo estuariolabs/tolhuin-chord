@@ -13,7 +13,7 @@ Objetivo: acercarse a la calidad y funciones del HiChord.
 | I2S DIN (→ PCM5102) | 40 |
 | SCK del PCM5102 | GND |
 
-- MCU: ESP32-S3 con PSRAM OPI
+- MCU: ESP32-S3. La placa vigente corre sin PSRAM detectada (el looper de audio queda apagado).
 - DAC: PCM5102 (I2S estéreo, 16-bit)
 - Sample rate: 44100 Hz, bloque: 256 muestras
 - Core 0: tarea de audio (I2S); Core 1: UI/lógica
@@ -48,6 +48,9 @@ tolhuin_chord_v2/
 # Correr tests de host (el script agrega g++ de WinLibs al PATH solo)
 powershell -ExecutionPolicy Bypass -File test\run_tests.ps1
 ```
+
+En macOS y Linux: `sh test/run_tests.sh`. Los pines viven sólo en `config.h`;
+`pcb/gen_netlist.py` los lee de ahí.
 
 Toolchain de host: g++ 16.1.0 (WinLibs UCRT, vía winget) en
 `%LOCALAPPDATA%\Microsoft\WinGet\Packages\BrechtSanders.WinLibs.POSIX.UCRT_*\mingw64\bin`.
@@ -172,8 +175,8 @@ FreeFonts). **El modo LOOPER se eliminó de la
 UI** (dependía de PSRAM, ausente en la S3 SuperMini actual); el DSP del looper
 (`dsp.cpp`/`synthLooper*`) queda pero sin cablear.
 
-Verificación: `test/run_tests.ps1` corre armonía (23073 checks) + DSP (157
-checks) en host, con WAVs opcionales `test/out_*.wav`. Para CALIBRAR timbres
+Verificación: `test/run_tests.sh` (o `.ps1` en Windows) corre armonía, conducción
+de voces, DSP y evloop en host; `test/test_pinout.py` compara la netlist con `config.h`, con WAVs opcionales `test/out_*.wav`. Para CALIBRAR timbres
 contra un audio de referencia: `tools/render_ref.cpp` (renderiza el motor en
 host a WAV estéreo; overrides de cut/res/fenv por argv y BASST/BASSG por env)
 + análisis FFT en Python. Firmware ~62% flash (MIDI USB+BLE NimBLE, OLED,
@@ -239,7 +242,7 @@ arpegiador completo con editor y scale-run, webtool retro con paquetes
 - **Flasheo**: la placa NO acepta auto-reset — BOOT+RESET manual y aparece en
   **COM11** (`--upload -p COM11`). Banner de versión: `fw=tolhuin-4.0`.
 
-**Núcleo: sólido y testeado** (23073 + 165 DSP + 29 evloop checks host). El transporte web
+**Núcleo: sólido y testeado** (54461 armonía + 145243 voces + 206 DSP + 35 evloop checks host). El transporte web
 confiable en esta placa es el CDC (drenado crudo del FIFO TinyUSB); el USB-MIDI
 enumera pero su RX host→placa quedó pendiente de verificar.
 
