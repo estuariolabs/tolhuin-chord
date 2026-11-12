@@ -45,7 +45,8 @@ repo aparte, más fácil de reusar como librería:
 | Archivo | Qué hace |
 |---------|----------|
 | `dsp.cpp/.h` | Síntesis (osciladores band-limited, ADSR, SVF, LFO), efectos (delay/reverb/chorus/tremolo), percusión, looper, arpegiador y **reloj maestro** con sync a MIDI clock. |
-| `vocal.cpp/.h` | Timbre **VOCAL**: voz por modelado físico (fuente glótica + tracto de guía de ondas, vocales A E I O U). Ver [`docs/VOCAL.md`](docs/VOCAL.md). |
+| `vocal.cpp/.h` | Timbre **VOCAL**: voz por modelado físico (fuente glótica + tracto de guía de ondas, vocales y consonantes). Ver [`docs/VOCAL.md`](docs/VOCAL.md). |
+| `vocal_text.cpp/.h` | Letra cantada: texto → fonemas → sílabas del español, por reglas (sin diccionario). |
 | `harmony.cpp/.h` | Armonía **diatónica**: acordes por grado, voicings, conducción de voces, reglas duras. |
 | `evloop.cpp/.h` | Motor de eventos / secuenciador puro. |
 

@@ -3,7 +3,7 @@
    Usa el MISMO tracto de vocal.h: mide los formantes de su respuesta al impulso
    y mueve los 8 puntos de control hasta acercarlos a los objetivos. Imprime las
    tablas VOCAL_AREA / VOCAL_GAIN para pegar en vocal.cpp. Determinista.
-   Compilar:  g++ -std=c++17 -O2 -I. tools/vocal_fit.cpp vocal.cpp -o vocal_fit
+   Compilar:  g++ -std=c++17 -O2 -I. tools/vocal_fit.cpp vocal.cpp vocal_text.cpp -o vocal_fit
    Uso:       vocal_fit            (ajusta e imprime tablas)
               vocal_fit 0..4       (ajusta sólo esa vocal: A E I O U)
               vocal_fit check      (sólo mide las tablas actuales de vocal.cpp)

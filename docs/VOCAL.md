@@ -1,8 +1,11 @@
-# Timbre VOCAL — voz por modelado físico (etapa 1)
+# Timbre VOCAL — voz por modelado físico
 
 Voz sintética que toca notas y acordes como un timbre más (`T_VOCAL`, índice 17,
-el último). Sin samples ni modelos neuronales. Etapa 1: **vocales sostenidas
-A E I O U**. No hay texto a voz, fonemas, consonantes ni letras.
+el último). Sin samples ni modelos neuronales.
+
+- **Etapa 1:** vocales sostenidas A E I O U (este documento, primera parte).
+- **Etapa 2:** letra cantada — texto → sílabas, consonantes y controles. Ver
+  [Etapa 2](#etapa-2--letra-cantada) más abajo.
 
 ## Modelo
 
@@ -120,8 +123,119 @@ solo tracto) y volver a medir. No se toca la polifonía ni el resto de los timbr
 - Largo de tracto fijo (voz adulta); sin tipos de voz ni formante del cantante.
 - La respuesta del tubo se repite en espejo por encima de 11 kHz (una muestra por
   sección); la fuente tiene muy poca energía ahí.
-- Fuera de alcance: texto a voz, fonemas, consonantes, nasales, diccionario,
-  cambios de UI, cantidad de aire y cociente abierto editables.
+- Cantidad de aire y cociente abierto no son editables.
+
+## Etapa 2 — letra cantada
+
+### Propuesta
+
+Un sintetizador de acordes no "lee" un texto: lo **canta**. Por eso el texto a
+voz se resuelve como en una partitura con letra: **una sílaba por ataque**. Cada
+vez que tocás una nota o un acorde, el coro dice la sílaba siguiente; la vocal se
+sostiene mientras dure la nota y la consonante final se pronuncia al soltar. Al
+terminar la letra, vuelve a empezar.
+
+Todo sigue siendo modelado físico sobre el mismo tubo: las consonantes no son
+samples ni filtros aparte, son **gestos** que cierran o estrechan el tracto.
+
+### Diseño
+
+| Parte | Qué hace | Dónde |
+|-------|----------|-------|
+| Texto → fonemas | Reglas de la ortografía española (c/qu, g/gu/gü, ll, rr, x, y, h muda). Seseo y yeísmo. Sin diccionario. | `vocal_text.cpp` |
+| Silabeo | Diptongos, triptongos e hiatos (la tilde rompe el diptongo: pa-ís), grupos pl/pr/tr…, coda. | `vocal_text.cpp` |
+| Gestos | Cada sílaba se vuelve una cola de tramos con objetivos de forma, constricción, sonoridad, ruido y velo. | `VocalArtic` en `vocal.h/.cpp` |
+| Tracto | Constricción en un lugar del tubo, ruido inyectado aguas abajo de ella y **rama nasal** (juntura de 3 puertos en el velo, 13 secciones). | `VocalTract::setShape` / `tickFull` |
+| Motor | Decide cuándo avanza la sílaba, suaviza sonoridad y ruido por muestra, corre el control cada 64 muestras. | `dsp.cpp` |
+
+Fonemas (22): vocales `a e i o u`; oclusivas `p b t d k g`; fricativas `f s j`;
+africada `ch`; nasales `m n ñ`; líquidas `l r rr`; `y` (y / ll).
+
+| Tipo | Cómo se produce en el tubo |
+|------|-----------------------------|
+| Oclusivas sordas (p t k) | Cierre total y sin voz ~70 ms, después explosión de ruido en el lugar del cierre. |
+| Oclusivas sonoras (b d g) | Cierre con poca voz y explosión breve; ligadas (entre vocales) no llegan a cerrar. |
+| Fricativas (f s j) | Estrechamiento + ruido aguas abajo, sin voz. |
+| Africada (ch) | Cierre y suelta en fricción. |
+| Nasales (m n ñ) | Boca cerrada, velo abierto: el sonido sale por la rama nasal. |
+| l, y | Estrechamiento parcial con voz. |
+| r / rr | Uno o tres toques breves contra el alvéolo. |
+
+**Coarticulación:** durante la consonante la lengua ya va hacia la vocal que
+sigue, porque la constricción se aplica *sobre* la forma de esa vocal.
+
+**Qué cuenta como un ataque.** Una nota nueva, un acorde (todas sus notas juntas),
+un rasgueo, una nota en modo mono o un acorde con glide. Notas a menos de 120 ms
+entre sí son el mismo ataque.
+
+**Qué no sale del modelo** (son parámetros elegidos a mano, por consonante):
+duraciones de los gestos, nivel del ruido y su color (un filtro de 1 polo sobre el
+ruido blanco). Los lugares de articulación son aproximados.
+
+### Controles
+
+**Editor web** (pestaña Timbres, con el timbre VOCAL elegido): botones de vocal,
+campo de letra, "Cargar letra", "Sin letra", "Volver al inicio" y la casilla
+"cantar la letra".
+
+**Equipo** (página **VOZ**, al final del menú): `VOC` elige la vocal A/E/I/O/U,
+`LET` prende o apaga la letra cargada, `INI` vuelve a la primera sílaba. La letra
+no se puede escribir desde el equipo: se carga por web y queda guardada.
+
+**Serial:**
+
+| Comando | Efecto |
+|---------|--------|
+| `#vtext hola mundo` | carga la letra (`#vtext` solo la borra) |
+| `#vlyr 0` / `#vlyr 1` | usar o no la letra |
+| `#vreset` | volver a la primera sílaba |
+| `#vowel 0..4` | vocal A E I O U del timbre |
+| `#vget` | estado: texto, sílaba actual, cantidad |
+
+El texto viaja en ASCII (el SysEx MIDI es de 7 bits): `~n` = ñ, `'a` = á, `:u` = ü.
+El editor web lo convierte solo. Máximo 95 caracteres y 48 sílabas.
+
+**NVS:** claves nuevas `vtx` (texto) y `vto` (on/off), con GUARDAR. No tocan el
+layout de timbres. Sin esas claves el equipo arranca sin letra, como en la etapa 1.
+
+### Costo (host, µs por bloque, mismo banco que la etapa 1)
+
+| Caso | 1 voz | 4 voces | 12 voces |
+|------|-------|---------|----------|
+| VOCAL sin letra | 22 | 28 | 47 |
+| VOCAL con letra (3 sílabas por segundo) | 35 | 41 | 60 |
+| BRASS (referencia, misma corrida) | — | 23 | 54 |
+
+La letra suma un costo fijo (control cada 64 muestras, ruido y rama nasal); no
+crece con la polifonía. RAM: unos 3,5 KB estáticos en total (tractos, gestos, letra). **En la placa:
+pendiente de medir**; hay que repetir la medición de la etapa 1 con una letra
+cargada.
+
+### Prueba en la placa
+
+1. Los pasos de [Medición en la placa](#medición-en-la-placa), y además:
+2. `#timbre 17`, `#vtext hola mundo`, tocar cuatro notas: debe decir *o · la · mun · do*.
+3. Tocar un acorde: una sola sílaba para todo el acorde.
+4. `#perf reset`, tocar acordes con letra ~20 s, `#perf`.
+5. Menú → página VOZ: cambiar `VOC`, apagar y prender `LET`, usar `INI`.
+6. GUARDAR, reiniciar: la letra tiene que seguir ahí.
+
+### Límites de la etapa 2
+
+- Es canto silábico, no habla: no hay prosodia, acento ni duración propia de las
+  sílabas; el ritmo lo ponés vos al tocar.
+- Una sola letra para todas las voces (el tracto es compartido).
+- La pronunciación es por reglas: fallan las excepciones (la x de "México", la w,
+  palabras de otros idiomas). No distingue s/z ni ll/y.
+- Las consonantes atrasan la vocal entre 20 y 130 ms respecto del ataque.
+- Con tempos muy rápidos se descartan los gestos que no llegaron a decirse.
+- b/d/g sonoras suenan casi mudas durante el cierre (no se modela la vibración de
+  las paredes).
+- Las consonantes no fueron ajustadas a oído ni contra grabaciones: los tests
+  miden que cada tipo se comporte como debe (silencio, ruido agudo, murmullo
+  nasal), no que se entiendan. Hace falta escucharlas.
+- El firmware no se compiló con `arduino-cli`; `synth.cpp`, `webcfg.cpp` y el
+  `.ino` sólo pasaron un chequeo de sintaxis en PC contra cabeceras simuladas.
 
 ## Referencias (conceptuales; no se copió código)
 
@@ -140,5 +254,10 @@ solo tracto) y volver a medir. No se toca la polifonía ni el resto de los timbr
   se usaron sus datos.
 - CHIMERA: referencia conceptual indicada para el proyecto (fuente glótica +
   tracto físico). No se consultó ni se copió su código en esta etapa.
+
+- Para las consonantes: la descripción articulatoria estándar del español (lugar y
+  modo de articulación) y la técnica general de síntesis articulatoria por
+  constricciones y ramas laterales sobre guías de onda (Smith, obra citada). Los
+  valores numéricos son propios.
 
 Dependencias nuevas: ninguna.

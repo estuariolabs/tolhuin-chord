@@ -459,6 +459,22 @@ void     dspClockSyncTicks(uint32_t tickInBar);
 // para los tests (decorrelación L/R).
 void dspRenderStereoDry(float* outL, float* outR, int n);
 
+// ----------------------------------------------------------------------------
+// VOCAL etapa 2: LETRA. Con una letra cargada, cada ataque (una nota o un acorde
+// entero) canta la sílaba siguiente: consonantes articuladas sobre el tracto y
+// la vocal sostenida mientras dure la nota. Al soltar se articula la coda. La
+// letra vuelve a empezar al terminar. Sin letra, VOCAL se comporta como en la
+// etapa 1 (vocal fija por wtMorph).
+// ----------------------------------------------------------------------------
+struct VocalLyrics;                              // vocal_text.h
+void dspVocalSetLyrics(const VocalLyrics* ly);   // copia la letra (nullptr o vacía = sin letra)
+void dspVocalSetText(const char* utf8);          // atajo host/tests: convierte y carga (NO en audio)
+void dspVocalLyricsOn(bool on);                  // usar o no la letra cargada
+bool dspVocalLyricsActive();                     // hay letra y está en uso
+void dspVocalLyricsReset();                      // vuelve a la primera sílaba
+int  dspVocalSyllable();                         // próxima sílaba a cantar (0..count-1)
+int  dspVocalSyllableCount();
+
 // Utilidades (para tests y UI).
 const char* dspTimbreName(uint8_t t);
 int         dspActiveVoices();

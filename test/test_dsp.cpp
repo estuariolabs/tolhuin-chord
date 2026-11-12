@@ -4,7 +4,7 @@
    propiedades numéricas y deterministas (no requiere oído).
 
    Compilar/correr (lo hace test/run_tests.ps1):
-     g++ -std=c++17 -I.. test_dsp.cpp ../dsp.cpp ../vocal.cpp -o test_dsp
+     g++ -std=c++17 -I.. test_dsp.cpp ../dsp.cpp ../vocal.cpp ../vocal_text.cpp -o test_dsp
      ./test_dsp      (devuelve 0 si todo pasa, 1 si hay fallas)
 
    Para cada timbre (BRASS / EPIANO / STRINGS) toca el acorde C4-E4-G4, renderiza

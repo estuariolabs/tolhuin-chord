@@ -1,8 +1,8 @@
 /* Benchmark relativo del hot path DSP en host. No predice microsegundos del
    ESP32-S3; compara BRASS/HBRASS con idénticas 12 voces y FX para detectar una
    regresión algorítmica antes de medir BLOCK_BUDGET_US en la placa.
-   Compilar:  g++ -std=c++17 -O2 -I. tools/bench_dsp.cpp dsp.cpp vocal.cpp -o bench_dsp
-   Uso:       bench_dsp [timbre] [fxmode] [voces 1..12]   (p. ej. VOCAL = timbre 17) */
+   Compilar:  g++ -std=c++17 -O2 -I. tools/bench_dsp.cpp dsp.cpp vocal.cpp vocal_text.cpp -o bench_dsp
+   Uso:       bench_dsp [timbre] [fxmode] [voces 1..12] [letra]   (p. ej. VOCAL = timbre 17) */
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -20,6 +20,7 @@ int main(int argc, char** argv) {
   dspSetChorus(true, 0.55f, 6.0f, 0.35f);
   dspSetBody(true, 0.9f);
   const uint8_t notes[MAX_VOICES] = {36,43,48,52,55,58,60,63,67,70,74,77};
+  if (argc > 4) dspVocalSetText(argv[4]);          // VOCAL con letra (peor caso: consonantes)
   for (int i=0; i<nv; ++i)
     dspNoteOn(notes[i], timbre, 0.80f, 0, i == 0 ? VG_BASS : VG_CHORD);
 
@@ -29,6 +30,8 @@ int main(int argc, char** argv) {
   volatile float checksum = 0.0f;
   auto t0 = std::chrono::steady_clock::now();
   for (int b=0; b<BLOCKS; ++b) {
+    if (argc > 4 && (b % 60) == 59)                 // re-ataca ~3 veces por segundo: sílaba nueva
+      for (int i=0; i<nv; ++i) dspNoteOn(notes[i], timbre, 0.80f, 0, i == 0 ? VG_BASS : VG_CHORD);
     dspRenderStereo(l, r, AUDIO_BLOCK);
     checksum += l[b & (AUDIO_BLOCK-1)] + r[(b*7) & (AUDIO_BLOCK-1)];
   }

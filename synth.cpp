@@ -10,6 +10,7 @@
 #include "config.h"
 #include "synth.h"
 #include "dsp.h"
+#include "vocal_text.h"
 
 static I2SClass i2s;
 static bool     ready = false;
@@ -99,6 +100,12 @@ static uint8_t gArpSeqStgLen[ARP_SLOTS];
 static uint8_t gArpActStg[ARP_SEQ_LEN];
 static uint8_t gArpActStgLen = 0;
 
+// VOCAL etapa 2: el texto se convierte a sílabas ACÁ (núcleo 1, capa de control)
+// y el struct plano viaja stageado; la tarea de audio sólo lo copia (evt 45).
+static char        gVoxText[VOCAL_TEXT_MAX] = "";
+static VocalLyrics gVoxLyStage;
+static volatile bool gVoxLyOn = true;
+
 static void drainEvents() {
   Evt ev;
   while (xQueueReceive(evtQ, &ev, 0) == pdTRUE) {
@@ -149,6 +156,9 @@ static void drainEvents() {
     else if (ev.type == 43 && ev.note < ARP_SLOTS)
                             dspArpSeqSet(ev.note, gArpSeqStg[ev.note], gArpSeqStgLen[ev.note]);  // patrón del slot
     else if (ev.type == 44) dspArpSetActiveSeq(gArpActStg, gArpActStgLen);   // secuencia activa
+    else if (ev.type == 45) dspVocalSetLyrics(&gVoxLyStage);            // letra (ya silabeada)
+    else if (ev.type == 46) dspVocalLyricsOn(ev.vel != 0);              // usar la letra on/off
+    else if (ev.type == 47) dspVocalLyricsReset();                      // primera sílaba
   }
 }
 
@@ -287,6 +297,35 @@ void synthEnvApply(uint8_t t, const EnvCfg& e) {
   sendEvt(30, t, 0);
 }
 void synthEnvGet(uint8_t t, EnvCfg* out)     { if (out) *out = dspEnvGet(t); }
+
+// --- VOCAL etapa 2: letra y vocal ---
+void synthVocalSetText(const char* text) {
+  // Sólo ASCII imprimible y sin comillas/barras: el texto vuelve tal cual en JSON.
+  int n = 0;
+  for (const char* p = text ? text : ""; *p && n < VOCAL_TEXT_MAX - 1; p++) {
+    char c = *p;
+    if (c < 0x20 || c > 0x7E || c == '"' || c == '\\') continue;
+    gVoxText[n++] = c;
+  }
+  gVoxText[n] = 0;
+  vocalTextToLyrics(gVoxText, &gVoxLyStage);
+  sendEvt(45, 0, 0);
+}
+const char* synthVocalText()          { return gVoxText; }
+void synthVocalLyricsOn(bool on)      { gVoxLyOn = on; sendEvt(46, 0, 0, on ? 1 : 0); }
+bool synthVocalLyrics()               { return gVoxLyOn; }
+void synthVocalReset()                { sendEvt(47, 0, 0); }
+int  synthVocalSyllable()             { return dspVocalSyllable(); }
+int  synthVocalSyllableCount()        { return gVoxLyStage.count; }
+void synthVocalSetVowel(uint8_t v) {
+  EnvCfg e = dspEnvGet(T_VOCAL);
+  e.wtMorph = (float)(v % 5) * 0.25f;
+  synthEnvApply(T_VOCAL, e);
+}
+uint8_t synthVocalVowel() {
+  int v = (int)(dspEnvGet(T_VOCAL).wtMorph * 4.0f + 0.5f);
+  return (uint8_t)(v < 0 ? 0 : (v > 4 ? 4 : v));
+}
 void synthEnvFactory(uint8_t t, EnvCfg* out) { if (out) *out = dspEnvFactory(t); }
 // Las máscaras ahora son de 32 bits (no entran en ev.delay): van STAGEADAS en
 // gDrumMaskStage (definida arriba) y el evento 31 sólo lleva (pat, inst).

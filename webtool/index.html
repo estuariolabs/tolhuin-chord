@@ -126,6 +126,26 @@
       <span class="note">(sólo los USR: elige el MOTOR; el resto de los parámetros son libres)</span>
     </div>
 
+    <div id="vocalBox" style="display:none; margin-top:10px">
+      <h2>Voz (timbre VOCAL)</h2>
+      <div class="row">
+        <label class="note">Vocal:</label>
+        <span id="vowelBtns"></span>
+        <span class="note">(sin letra, el timbre canta esta vocal)</span>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <input id="vText" type="text" maxlength="90" style="flex:1; min-width:220px"
+               placeholder="letra: una sílaba por nota o acorde (ej. hola mundo)">
+        <button id="vSend" class="primary">Cargar letra</button>
+        <button id="vClear">Sin letra</button>
+        <button id="vReset">Volver al inicio</button>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <label class="note"><input type="checkbox" id="vOn" checked> cantar la letra</label>
+        <span id="vStatus" class="note"></span>
+      </div>
+    </div>
+
     <h2>Amplitud</h2>
     <div class="params" id="grpAmp"></div>
     <div class="row" style="margin-top:6px">
@@ -321,7 +341,7 @@ function log(s) {
 async function send(line) {
   // Cualquier comando que CAMBIE config persistente marca "sin guardar".
   const c0 = line.split(" ")[0];
-  if (/^#(setenv|setdrum|setarp|drumgain|drumeng|drumname|arpname)$/.test(c0)) markDirty();
+  if (/^#(setenv|setdrum|setarp|drumgain|drumeng|drumname|arpname|vtext|vlyr|vowel)$/.test(c0)) markDirty();
   if (midiOn && midiOut) {                            // MIDI: SysEx F0 7D 01 <ascii> F7
     const bytes = [0xF0, 0x7D, 0x01];
     for (const ch of line) bytes.push(ch.charCodeAt(0) & 0x7F);
@@ -353,6 +373,7 @@ function feedLine(line) {
   let obj;
   try { obj = JSON.parse(line); } catch { log(line); return; }
   if (obj.cmd === "chord") onChordResponse(obj);       // visualizador de acorde
+  if (obj.cmd === "vocal") onVocalResponse(obj);       // letra / vocal del timbre VOCAL
   const i = pendings.findIndex(p => p.match(obj));
   if (i >= 0) {
     const p = pendings.splice(i, 1)[0];
@@ -527,6 +548,7 @@ async function hello() {
   $("stFw").textContent = "fw " + (h.fw || "?") + " · " + TCOUNT + " timbres · " + ARPSLOTS + " arps";
   buildTimbreBtns();
   buildFamilySel();
+  buildVocalUI();
   buildDrumUI();
   buildArpUI();
   await loadTimbre(curTimbre);
@@ -601,6 +623,33 @@ function buildTimbreBtns() {
     box.appendChild(b);
   });
 }
+// ----- Voz (timbre VOCAL): letra y vocal -----
+// El transporte MIDI es de 7 bits: ñ, tildes y ü viajan como escapes ASCII.
+const V_ENC = { "ñ":"~n", "Ñ":"~N", "á":"'a", "é":"'e", "í":"'i", "ó":"'o", "ú":"'u",
+                "Á":"'A", "É":"'E", "Í":"'I", "Ó":"'O", "Ú":"'U", "ü":":u", "Ü":":U" };
+const vEncode = (t) => [...t].map(ch => V_ENC[ch] !== undefined ? V_ENC[ch]
+                              : (ch.charCodeAt(0) < 127 && ch !== '"' && ch !== "\\" && ch !== "'" && ch !== "~" && ch !== ":" ? ch : " ")).join("");
+const vDecode = (t) => { let s = t; for (const [k, v] of Object.entries(V_ENC)) s = s.split(v).join(k); return s; };
+function onVocalResponse(o) {
+  $("vOn").checked = !!o.on;
+  if (document.activeElement !== $("vText")) $("vText").value = vDecode(o.text || "");
+  $("vStatus").textContent = o.count ? `${o.count} sílabas · próxima: ${o.syl + 1}` : "sin letra: canta la vocal elegida";
+  document.querySelectorAll("#vowelBtns button").forEach((b, i) => b.classList.toggle("sel", i === o.vowel));
+}
+function buildVocalUI() {
+  const box = $("vowelBtns"); box.innerHTML = "";
+  ["A", "E", "I", "O", "U"].forEach((n, i) => {
+    const b = document.createElement("button");
+    b.textContent = n;
+    b.onclick = () => send("#vowel " + i);
+    box.appendChild(b);
+  });
+  $("vSend").onclick  = () => send("#vtext " + vEncode($("vText").value).trim());
+  $("vClear").onclick = () => { $("vText").value = ""; send("#vtext"); };
+  $("vReset").onclick = () => send("#vreset").then(() => send("#vget"));
+  $("vOn").onchange   = () => send("#vlyr " + ($("vOn").checked ? 1 : 0));
+  $("vText").addEventListener("keydown", (e) => { if (e.key === "Enter") $("vSend").click(); });
+}
 function buildFamilySel() {
   const sel = $("familySel");
   sel.innerHTML = "";
@@ -617,6 +666,9 @@ function applyEnvToUI(e) {
     $("o_" + key).textContent = fmtVal(e[key]);
   }
   $("percChk").checked = !!e.perc;
+  const isVocal = (NAMES[curTimbre] || "") === "VOCAL";
+  $("vocalBox").style.display = isVocal ? "block" : "none";
+  if (isVocal) send("#vget");
   const isUser = (NAMES[curTimbre] || "").startsWith("USR");   // VOCAL va después de los USR y no es slot de usuario
   $("familyRow").style.display = isUser ? "flex" : "none";
   if (isUser && e.family !== undefined) $("familySel").value = e.family;

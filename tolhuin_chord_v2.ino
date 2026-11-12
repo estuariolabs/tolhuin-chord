@@ -227,6 +227,7 @@ enum FxItem {
   FX_VSYNTH, FX_VSUB, FX_VDRUM,             // NIVELES (volúmenes synth / sub-bajo / batería)
   FX_TREMOLO, FX_CLOCK, FX_MET,             // SYNC (+ metrónomo)
   FX_SAVE, FX_LOAD,                         // MEMORIA (persistencia en el equipo)
+  FX_VOWEL, FX_VLYR, FX_VRST,               // VOZ (timbre VOCAL: vocal / letra on-off / reiniciar)
   FX_COUNT
 };
 // Nombres largos (log serial) y CORTOS (filas del OLED, <=3 chars).
@@ -236,12 +237,14 @@ static const char* FX_NAME[FX_COUNT] =
     "PATRON", "ARP", "ARP PRESET", "LOOP REC", "LOOP PLAY", "LOOP CLEAR", "CANAL",
     "GRABAR HITS", "OCTAVE", "MONO", "GLIDE", "SUSTAIN", "DELAY",
     "CHORUS", "VOL SYNTH", "VOL SUB", "VOL DRUMS",
-    "TREMOLO", "CLK OUT", "METRONOMO", "GUARDAR", "CARGAR" };
+    "TREMOLO", "CLK OUT", "METRONOMO", "GUARDAR", "CARGAR",
+    "VOCAL", "LETRA", "LETRA INICIO" };
 static const char* FX_SHORT[FX_COUNT] =
   { "TIM", "BDY", "RND", "KEY", "MOD", "RIQ", "LED", "JOY", "BPM", "DRM", "PAT",
     "ARP", "PRE", "REC", "PLY", "CLR", "CHN", "GRB", "OCT", "MON", "GLI", "SUS", "DLY", "CHO",
     "vSY", "vSU", "vDR",
-    "TRM", "CLK", "MET", "GRD", "CRG" };
+    "TRM", "CLK", "MET", "GRD", "CRG",
+    "VOC", "LET", "INI" };
 // Páginas del menú (título + rango contiguo del enum).
 struct FxPage { const char* title; uint8_t first, count; };
 static const FxPage FX_PAGES[] = {
@@ -257,6 +260,7 @@ static const FxPage FX_PAGES[] = {
   { "NIVELES",  FX_VSYNTH,  3 },
   { "SYNC",     FX_TREMOLO, 3 },
   { "MEMORIA",  FX_SAVE,    2 },
+  { "VOZ",      FX_VOWEL,   3 },   // al FINAL: no corre los iconos (IC_PAGE) de las otras páginas
 };
 static const int FX_NPAGES = sizeof(FX_PAGES) / sizeof(FX_PAGES[0]);
 static int      fxSel = 0;         // ítem seleccionado del menú
@@ -336,6 +340,12 @@ static void fxValue(int it, char* buf) {
     case FX_VSYNTH:  sprintf(buf, "%d%%", (int)(synthSynthGain() * 100.0f + 0.5f)); break;
     case FX_VSUB:    sprintf(buf, "%d%%", (int)(synthBassGain()  * 100.0f + 0.5f)); break;
     case FX_VDRUM:   sprintf(buf, "%d%%", (int)(synthDrumsGain() * 100.0f + 0.5f)); break;
+    case FX_VOWEL: { static const char* VW[5] = { "A", "E", "I", "O", "U" };
+                     strcpy(buf, VW[synthVocalVowel() % 5]); break; }
+    case FX_VLYR:    strcpy(buf, synthVocalSyllableCount() == 0 ? "--"       // sin letra cargada
+                                 : (synthVocalLyrics() ? "on" : "off")); break;
+    case FX_VRST:    sprintf(buf, "%d/%d", synthVocalSyllableCount() ? synthVocalSyllable() + 1 : 0,
+                             synthVocalSyllableCount()); break;
     case FX_SAVE:    strcpy(buf, (millis() - fxSavedMs < 2000) ? "ok!" : "->"); break;
     case FX_LOAD:    strcpy(buf, (millis() - fxLoadedMs < 2000) ? "ok!" : "->"); break;
     default:         buf[0] = 0; break;
@@ -345,6 +355,15 @@ static void fxValue(int it, char* buf) {
 // Actúa sobre el ítem `it`. dir=+1 adelante/encender, dir=-1 atrás.
 static void fxApply(int it, int dir) {
   switch (it) {
+    case FX_VOWEL:                                 // vocal del timbre VOCAL (sin letra)
+      synthVocalSetVowel((uint8_t)((synthVocalVowel() + dir + 5) % 5));
+      break;
+    case FX_VLYR:                                  // cantar la letra cargada por web on/off
+      synthVocalLyricsOn(!synthVocalLyrics());
+      break;
+    case FX_VRST:                                  // volver a la primera sílaba
+      synthVocalReset();
+      break;
     case FX_TIMBRE:
       synthSetTimbre((uint8_t)((synthTimbre() + dir + T_COUNT) % T_COUNT));
       // Con el loop sonando NO re-dispara: el acorde vigente es del loop y

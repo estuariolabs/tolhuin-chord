@@ -188,6 +188,9 @@ static void nvsSave() {
     char key[8]; snprintf(key, sizeof(key), "dn%d", p);
     prefs.putString(key, synthPresetName(0, p));
   }
+  // VOCAL: letra (texto ASCII) y si se usa. Claves propias: no tocan el layout de timbres.
+  prefs.putString("vtx", synthVocalText());
+  prefs.putUChar("vto", synthVocalLyrics() ? 1 : 0);
   prefs.end();
 }
 
@@ -270,6 +273,13 @@ static bool nvsLoad() {
   for (int p = 1; p < DRUM_PATTERNS; p++) {
     char key[8]; snprintf(key, sizeof(key), "dn%d", p);
     if (prefs.isKey(key)) { String nm = prefs.getString(key); synthPresetNameSet(0, p, nm.c_str()); }
+  }
+  // VOCAL: letra guardada (si no hay clave, queda sin letra = comportamiento de etapa 1).
+  if (prefs.isKey("vtx")) {
+    String tx = prefs.getString("vtx");
+    synthVocalSetText(tx.c_str());
+    synthVocalLyricsOn(prefs.getUChar("vto", 1) != 0);
+    any = true;
   }
 
   // SESIÓN del intérprete -> app (los toggles/timbre los APLICA el .ino al
@@ -451,6 +461,13 @@ static void cmdChord(char* args) {
   if (!n) { printErr("notas"); return; }
   synthPlaySet(notes, n);
   printOk();
+}
+
+// #vget / #vtext / #vlyr / #vowel -> estado de la voz cantada.
+static void cmdVocal() {
+  outf("{\"cmd\":\"vocal\",\"text\":\"%s\",\"on\":%d,\"syl\":%d,\"count\":%d,\"vowel\":%u}\n",
+       synthVocalText(), synthVocalLyrics() ? 1 : 0, synthVocalSyllable(),
+       synthVocalSyllableCount(), (unsigned)synthVocalVowel());
 }
 
 static void processLine(char* line) {
@@ -676,6 +693,16 @@ static void processLine(char* line) {
   else if (strcmp(cmd, "subbass") == 0) {                // sub-bajo sine dedicado on/off
     app.subBass = args && atoi(args) != 0;
     printOk();
+  }
+  // --- VOCAL etapa 2: letra cantada ---
+  else if (strcmp(cmd, "vtext") == 0)  { synthVocalSetText(args ? args : ""); cmdVocal(); }
+  else if (strcmp(cmd, "vget") == 0)   { cmdVocal(); }
+  else if (strcmp(cmd, "vlyr") == 0)   { synthVocalLyricsOn(args && atoi(args) != 0); cmdVocal(); }
+  else if (strcmp(cmd, "vreset") == 0) { synthVocalReset(); printOk(); }
+  else if (strcmp(cmd, "vowel") == 0)  {
+    int v = args ? atoi(args) : -1;
+    if (v < 0 || v > 4) { printErr("vowel"); return; }
+    synthVocalSetVowel((uint8_t)v); cmdVocal();
   }
   else if (strcmp(cmd, "noteon") == 0)  { if (args) { synthNoteOn((uint8_t)atoi(args), 100); printOk(); } }
   else if (strcmp(cmd, "noteoff") == 0) { if (args) { synthNoteOff((uint8_t)atoi(args)); printOk(); } }

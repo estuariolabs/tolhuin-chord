@@ -11,7 +11,7 @@
      out_vocal_escala.wav     escala C2..G6 (rango útil)
 
    Compilar/correr:
-     g++ -std=c++17 -I. test/test_vocal.cpp dsp.cpp vocal.cpp -o test_vocal
+     g++ -std=c++17 -I. test/test_vocal.cpp dsp.cpp vocal.cpp vocal_text.cpp -o test_vocal
      ./test_vocal [dir_salida_wav]
    ============================================================================ */
 #include <cstdio>

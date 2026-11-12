@@ -49,7 +49,7 @@ $srcD = Join-Path $testDir "test_dsp.cpp"
 $outD = Join-Path $testDir "test_dsp.exe"
 if (Test-Path $srcD) {
   Write-Host "`n[test_dsp]"
-  & $cxx -std=c++17 -I "$root" "$srcD" (Join-Path $root "dsp.cpp") (Join-Path $root "vocal.cpp") -o "$outD"
+  & $cxx -std=c++17 -I "$root" "$srcD" (Join-Path $root "dsp.cpp") (Join-Path $root "vocal.cpp") (Join-Path $root "vocal_text.cpp") -o "$outD"
   if ($LASTEXITCODE -ne 0) { Write-Host "ERROR compilando test_dsp"; exit 1 }
   & "$outD" "$testDir"          # escribe out_*.wav en test\
   if ($LASTEXITCODE -ne 0) { $fail = 1 }
@@ -60,9 +60,20 @@ $srcVo = Join-Path $testDir "test_vocal.cpp"
 $outVo = Join-Path $testDir "test_vocal.exe"
 if (Test-Path $srcVo) {
   Write-Host "`n[test_vocal]"
-  & $cxx -std=c++17 -I "$root" "$srcVo" (Join-Path $root "dsp.cpp") (Join-Path $root "vocal.cpp") -o "$outVo"
+  & $cxx -std=c++17 -I "$root" "$srcVo" (Join-Path $root "dsp.cpp") (Join-Path $root "vocal.cpp") (Join-Path $root "vocal_text.cpp") -o "$outVo"
   if ($LASTEXITCODE -ne 0) { Write-Host "ERROR compilando test_vocal"; exit 1 }
   & "$outVo" "$testDir"         # escribe out_vocal_*.wav en test\
+  if ($LASTEXITCODE -ne 0) { $fail = 1 }
+}
+
+# --- test de la letra cantada (texto -> sílabas, consonantes, motor) ---
+$srcVt = Join-Path $testDir "test_vocal_text.cpp"
+$outVt = Join-Path $testDir "test_vocal_text.exe"
+if (Test-Path $srcVt) {
+  Write-Host "`n[test_vocal_text]"
+  & $cxx -std=c++17 -I "$root" "$srcVt" (Join-Path $root "dsp.cpp") (Join-Path $root "vocal.cpp") (Join-Path $root "vocal_text.cpp") -o "$outVt"
+  if ($LASTEXITCODE -ne 0) { Write-Host "ERROR compilando test_vocal_text"; exit 1 }
+  & "$outVt" "$testDir"         # escribe out_vocal_txt_*.wav en test\
   if ($LASTEXITCODE -ne 0) { $fail = 1 }
 }
 
