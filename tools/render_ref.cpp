@@ -2,7 +2,7 @@
    render_ref.cpp  -  Banco de calibración de timbres (host).
    Renderiza el motor DSP puro tocando un acorde y vuelca un WAV estéreo, para
    comparar el espectro contra un audio de referencia (matching HiChord).
-   Compilar:  g++ -std=c++17 -I.. tools/render_ref.cpp ../dsp.cpp -o render_ref
+   Compilar:  g++ -std=c++17 -I.. tools/render_ref.cpp ../dsp.cpp ../vocal.cpp ../vocal_text.cpp -o render_ref
    Uso:       render_ref <timbre 0..12> <chorus 0/1> <body 0/1> out.wav
    ============================================================================ */
 #include <cstdio>

@@ -188,13 +188,17 @@ static void nvsSave() {
     char key[8]; snprintf(key, sizeof(key), "dn%d", p);
     prefs.putString(key, synthPresetName(0, p));
   }
+  // VOCAL: letra (texto ASCII) y si se usa. Claves propias: no tocan el layout de timbres.
+  prefs.putString("vtx", synthVocalText());
+  prefs.putUChar("vto", synthVocalLyrics() ? 1 : 0);
   prefs.end();
 }
 
 static bool nvsLoad() {
   prefs.begin("tolhuin", true);
   bool any = false;
-  // Historial de layouts: 14 (sin HBRASS), 15 (HBRASS), 17 (EPIANO B/C).
+  // Historial de layouts: 14 (sin HBRASS), 15 (HBRASS), 17 (EPIANO B/C),
+  // 18 (+VOCAL, agregado AL FINAL: los índices 0..16 no se movieron).
   uint8_t storedTimbres = prefs.getUChar("tcnt", 0);
   if (storedTimbres == 0) {
     if      (prefs.isKey("env16")) storedTimbres = 17;
@@ -207,8 +211,10 @@ static bool nvsLoad() {
   // seis USR anteriores se desplazan de 8..13 a 9..14.
   if (prefs.getUShort("cfgv", 0) == (uint16_t)sizeof(EnvCfg)) {
     char key[8];
-    if (storedTimbres == T_COUNT) {
-      for (uint8_t t = 0; t < T_COUNT; t++) {
+    if (storedTimbres == T_COUNT || storedTimbres == 17) {
+      // Layout 17 -> 18: mismos índices; VOCAL (17) no estaba guardado y queda
+      // de fábrica. Sin esta rama, actualizar el firmware borraba las ediciones.
+      for (uint8_t t = 0; t < storedTimbres; t++) {
         EnvCfg e;
         snprintf(key, sizeof(key), "env%u", t);
         if (prefs.getBytes(key, &e, sizeof(e)) == sizeof(e)) { synthEnvApply(t, e); any = true; }
@@ -267,6 +273,13 @@ static bool nvsLoad() {
   for (int p = 1; p < DRUM_PATTERNS; p++) {
     char key[8]; snprintf(key, sizeof(key), "dn%d", p);
     if (prefs.isKey(key)) { String nm = prefs.getString(key); synthPresetNameSet(0, p, nm.c_str()); }
+  }
+  // VOCAL: letra guardada (si no hay clave, queda sin letra = comportamiento de etapa 1).
+  if (prefs.isKey("vtx")) {
+    String tx = prefs.getString("vtx");
+    synthVocalSetText(tx.c_str());
+    synthVocalLyricsOn(prefs.getUChar("vto", 1) != 0);
+    any = true;
   }
 
   // SESIÓN del intérprete -> app (los toggles/timbre los APLICA el .ino al
@@ -448,6 +461,13 @@ static void cmdChord(char* args) {
   if (!n) { printErr("notas"); return; }
   synthPlaySet(notes, n);
   printOk();
+}
+
+// #vget / #vtext / #vlyr / #vowel -> estado de la voz cantada.
+static void cmdVocal() {
+  outf("{\"cmd\":\"vocal\",\"text\":\"%s\",\"on\":%d,\"syl\":%d,\"count\":%d,\"vowel\":%u}\n",
+       synthVocalText(), synthVocalLyrics() ? 1 : 0, synthVocalSyllable(),
+       synthVocalSyllableCount(), (unsigned)synthVocalVowel());
 }
 
 static void processLine(char* line) {
@@ -674,6 +694,16 @@ static void processLine(char* line) {
     app.subBass = args && atoi(args) != 0;
     printOk();
   }
+  // --- VOCAL etapa 2: letra cantada ---
+  else if (strcmp(cmd, "vtext") == 0)  { synthVocalSetText(args ? args : ""); cmdVocal(); }
+  else if (strcmp(cmd, "vget") == 0)   { cmdVocal(); }
+  else if (strcmp(cmd, "vlyr") == 0)   { synthVocalLyricsOn(args && atoi(args) != 0); cmdVocal(); }
+  else if (strcmp(cmd, "vreset") == 0) { synthVocalReset(); printOk(); }
+  else if (strcmp(cmd, "vowel") == 0)  {
+    int v = args ? atoi(args) : -1;
+    if (v < 0 || v > 4) { printErr("vowel"); return; }
+    synthVocalSetVowel((uint8_t)v); cmdVocal();
+  }
   else if (strcmp(cmd, "noteon") == 0)  { if (args) { synthNoteOn((uint8_t)atoi(args), 100); printOk(); } }
   else if (strcmp(cmd, "noteoff") == 0) { if (args) { synthNoteOff((uint8_t)atoi(args)); printOk(); } }
   else if (strcmp(cmd, "chord") == 0)   { if (args) cmdChord(args); else printErr("args"); }
@@ -682,10 +712,15 @@ static void processLine(char* line) {
     bool reset = args && strcmp(args, "reset") == 0;
     uint32_t maxUs = 0, late = 0;
     synthPerfStats(&maxUs, &late, reset);
-    outf("{\"cmd\":\"perf\",\"maxUs\":%lu,\"lateBlocks\":%lu,\"budgetUs\":%lu,\"voices\":%d,\"reset\":%d}\n",
+    // heapFree/heapMin = RAM interna libre ahora / mínimo histórico; psram = bytes
+    // de PSRAM detectados por el core (0 = la placa NO tiene o no la inicializó).
+    outf("{\"cmd\":\"perf\",\"maxUs\":%lu,\"lateBlocks\":%lu,\"budgetUs\":%lu,\"voices\":%d,\"reset\":%d,"
+         "\"heapFree\":%lu,\"heapMin\":%lu,\"psram\":%lu}\n",
          (unsigned long)maxUs, (unsigned long)late,
          (unsigned long)((1000000ULL * AUDIO_BLOCK) / SAMPLE_RATE),
-         dspActiveVoices(), reset ? 1 : 0);
+         dspActiveVoices(), reset ? 1 : 0,
+         (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getMinFreeHeap(),
+         (unsigned long)ESP.getPsramSize());
   }
   else if (strcmp(cmd, "save") == 0) {
     nvsSave();

@@ -9,6 +9,7 @@
    ============================================================================ */
 #include <math.h>
 #include "dsp.h"
+#include "vocal.h"   // voz por modelado físico (DSP puro, camino caliente inline)
 
 // Arduino compila con -Os (tamaño); este archivo es el camino caliente del audio
 // y con -Os los timbres PolyBLEP (STRINGS: 3 saws + 2 filtros por voz; BRASS:
@@ -38,7 +39,8 @@
 // (pasó al ampliar a 6 USR). El test de host verifica nombres no-nulos.
 static const char* T_NAME[T_COUNT] = { "BRASS", "EPIANO", "STR", "SINE", "TRI", "ORGAN",
                                        "FLUTE", "WAVE", "HBRASS", "EPIANO B", "EPIANO C",
-                                       "USR1", "USR2", "USR3", "USR4", "USR5", "USR6" };
+                                       "USR1", "USR2", "USR3", "USR4", "USR5", "USR6",
+                                       "VOCAL" };
 
 // ----------------------------------------------------------------------------
 // Una voz polifónica: fases, envolvente de amplitud (ADSR) y de FM, LPF.
@@ -70,6 +72,48 @@ struct Voice {
   float   atkPitch=0;                  // BODY: transitorio de pitch al ataque (se asienta)
 };
 static Voice voices[MAX_VOICES];
+
+// ----------------------------------------------------------------------------
+// VOCAL: coro de tracto compartido. Cada voz ENG_VOCAL sólo genera su FUENTE
+// glótica; todas se suman en un bus de excitación y pasan por DOS tractos (L/R).
+// El tracto es lineal, así que equivale a un tracto por nota con la misma vocal,
+// pero el costo del tubo es FIJO (no crece con la polifonía). Los dos tubos
+// tienen largo distinto (17.5 / 16.7 cm: dos "cantantes") -> ancho estéreo.
+// Con el timbre sin usar, gVoxHold == 0 y nada de esto se ejecuta.
+// ----------------------------------------------------------------------------
+static VocalTract gVoxL, gVoxR;
+static int     gVoxHold   = 0;          // muestras de cola que le quedan al tracto (0 = dormido)
+static uint8_t gVoxTimbre = T_VOCAL;    // timbre que manda la vocal (última voz vocal iniciada)
+static float   gVoxMorph  = -1.0f;      // vocal aplicada a los tractos
+// --- etapa 2: articulación y letra ---
+static VocalArtic  gVoxArt;             // gestos (constricción / sonoridad / ruido / velo)
+static VocalLyrics gVoxLy;              // letra silabeada (count 0 = sin letra)
+static bool    gVoxLyOn    = true;      // usar la letra cargada
+static uint8_t gVoxSyl     = 0;         // próxima sílaba
+static int     gVoxOpen    = -1;        // sílaba abierta (falta su coda); -1 = ninguna
+static uint32_t gVoxSince  = 0x7FFFFFFF; // muestras desde el último avance de sílaba
+static int     gVoxCtl     = 0;         // cuenta regresiva del control (cada VOX_CTL muestras)
+static float   gVoxVoice   = 1.0f;      // sonoridad suavizada por muestra
+static float   gVoxNoise   = 0.0f;      // ruido de constricción suavizado
+static float   gVoxNzL = 0.0f, gVoxNzR = 0.0f;   // estado del filtro de color del ruido
+static const int   VOX_CTL      = 64;   // tasa de control de la articulación (1.45 ms)
+static const uint32_t VOX_SYL_GAP = 5292; // 120 ms: notas más juntas = el MISMO ataque (acorde/rasgueo)
+static const float VOX_FRIC     = 0.30f; // nivel del ruido de fricción / explosión
+static const int   VOX_HOLD   = 4096;   // ~93 ms: deja apagarse la resonancia y duerme el tubo
+static const float VOX_BREATH = 0.04f;  // ruido de aspiración (modulado por el flujo glótico)
+// Fuga glótica: una fracción del ruido pasa también con la glotis "cerrada" (en
+// una voz real nunca sella del todo). Además evita que la fuente quede en CERO
+// exacto en la fase cerrada de las notas graves: ahí el filtro de 1 polo caía a
+// números denormales y el render se volvía varias veces más lento.
+static const float VOX_LEAK   = 0.06f;
+static const float VOX_OUT    = 2.0f;   // nivel de salida del coro frente a los otros timbres
+// Ruido PROPIO de la aspiración: no consume dspNoise(), así el aliento/drift de
+// los timbres existentes suena igual haya o no una voz VOCAL activa.
+static uint32_t gVoxRng = 0x9E3779B9u;
+static inline float voxNoise() {
+  gVoxRng = gVoxRng * 1664525u + 1013904223u;
+  return (float)(int32_t)gVoxRng * (1.0f / 2147483648.0f);
+}
 
 // Config por timbre (struct EnvCfg pública en dsp.h; la edita el web-config).
 // ENV = vivo; ENV_DEFAULT = preset del usuario (lo que restauran dspResetSound
@@ -607,7 +651,7 @@ static void envInit() {
                       5200, 0.60f, 1.6f, 1, 200, 0.35f, 220, 4.8f, 0.0004f, 0.09f, true,
                       msInc(230), 0.23f, 6.02f };
   // Familia de oscilador: los timbres base renderizan con su propio motor.
-  for (int t = 0; t < T_ENGINE_COUNT; t++) ENV[t].family = (uint8_t)t;
+  for (int t = 0; t <= T_HBRASS; t++) ENV[t].family = (uint8_t)t;
   ENV[T_EPIANO_B].family = T_EPIANO;
   ENV[T_EPIANO_C].family = T_EPIANO;
   // Timbres de USUARIO: nacen como copias editables de la paleta base (puntos de
@@ -619,6 +663,13 @@ static void envInit() {
     ENV[u] = ENV[seed];
     ENV[u].family = seed;
   }
+
+  // VOCAL (modelado físico): ataque/release de coro, vibrato suave. cutHz = brillo
+  // de la fuente glótica; wtMorph = vocal (A por defecto). Sin SVF ni env de filtro.
+  ENV[T_VOCAL]   = { 70, 250,  0.90f, 280,        0,         0,    0,
+                     4000, 0.50f, 0.0f, 1, 100,  1.0f, 100,      5.2f, 0.0060f, 0.03f, false };
+  ENV[T_VOCAL].wtMorph = VOCAL_MORPH_A;
+  ENV[T_VOCAL].family  = ENG_VOCAL;
 
   for (int t = 0; t < T_COUNT; t++) {
     ENV_DEFAULT[t] = ENV[t];   // preset del usuario (restaurar tras random/timbre)
@@ -641,7 +692,8 @@ void   dspEnvSet(uint8_t t, const EnvCfg& e) {
   // hace que el slider CUTOFF responda sobre el acorde sostenido sin pagar un
   // expf por voz en cada bloque de audio.
   for (auto& v : voices)
-    if (v.active && v.timbre == t && v.osc == T_HBRASS) v.hbK = lpCoef(e.cutHz);
+    if (v.active && v.timbre == t && (v.osc == T_HBRASS || v.osc == ENG_VOCAL))
+      v.hbK = lpCoef(e.cutHz);
 }
 
 // --- Edición de patrones de batería (slots 1..7; el 0 es "off") ---
@@ -725,6 +777,67 @@ static const float NOTE_PAN_R[12] = {
   0.896872742f, 0.946930129f, 0.980785280f, 0.997858923f
 };
 
+// ----------------------------------------------------------------------------
+// VOCAL: ataque y control de la articulación.
+// ----------------------------------------------------------------------------
+static inline bool voxLyrics() { return gVoxLyOn && gVoxLy.count > 0; }
+
+// Una voz VOCAL arranca (o un acorde desliza): despierta el coro y, si hay letra,
+// canta la sílaba siguiente. Las notas de un mismo acorde/rasgueo llegan juntas:
+// sólo la primera avanza la sílaba (VOX_SYL_GAP).
+static void voxAttack(uint8_t t) {
+  gVoxTimbre = t;
+  bool asleep = (gVoxHold == 0);
+  if (asleep) {                                   // tubo dormido: arranca YA, sin transición
+    gVoxMorph = ENV[t].wtMorph;
+    gVoxArt.reset(gVoxMorph);
+    gVoxVoice = 1.0f; gVoxNoise = 0.0f; gVoxCtl = 0; gVoxOpen = -1;
+  }
+  gVoxHold = VOX_HOLD;
+  if (!voxLyrics()) return;
+  if (!asleep && gVoxSince < VOX_SYL_GAP) return; // misma pulsación
+  gVoxSince = 0;
+  if (gVoxSyl >= gVoxLy.count) gVoxSyl = 0;
+  // Si todavía quedaban gestos de antes (tempo rápido), se descartan: manda la sílaba nueva.
+  if (gVoxArt.qn > 0) gVoxArt.flush();
+  // Ligado: la coda de la sílaba anterior se dice justo antes de la nueva.
+  if (gVoxOpen >= 0) gVoxArt.closeSyllable(gVoxLy.syl[gVoxOpen]);
+  const VocalSyl& sy = gVoxLy.syl[gVoxSyl];
+  if (asleep) {                                   // desde el silencio: la boca ya está en la vocal
+    gVoxArt.reset((float)(sy.nuc[0] - VP_A) / (float)(VOCAL_VOWELS - 1));
+    if (sy.onset[0]) gVoxVoice = 0.0f;            // y no suena hasta que la consonante lo diga
+  }
+  gVoxArt.startSyllable(sy, !asleep);             // b/d/g suaves si viene ligado
+  gVoxOpen = gVoxSyl;
+  gVoxSyl = (uint8_t)((gVoxSyl + 1) % gVoxLy.count);
+}
+
+// Control de la articulación (cada VOX_CTL muestras, sólo con el coro despierto).
+static void voxControl() {
+  const float dt = (float)VOX_CTL / (float)SAMPLE_RATE;
+  if (voxLyrics()) {
+    // Todas las notas sueltas: se dice la coda de la sílaba abierta (can-TAR -> "r").
+    if (gVoxOpen >= 0) {
+      bool held = false;
+      for (auto& v : voices)
+        if (v.active && v.osc == ENG_VOCAL && v.amp.stage != Adsr::ST_REL) { held = true; break; }
+      if (!held) { gVoxArt.closeSyllable(gVoxLy.syl[gVoxOpen]); gVoxOpen = -1; }
+    }
+  } else {
+    float m = ENV[gVoxTimbre].wtMorph;            // sin letra: la vocal es la del timbre
+    if (m != gVoxMorph) { gVoxMorph = m; gVoxArt.setMorph(m); }
+  }
+  gVoxArt.control(dt);
+  if (gVoxArt.busy()) gVoxHold = VOX_HOLD;        // no dormirse a mitad de un gesto
+  if (gVoxArt.dirty) {
+    gVoxArt.apply(gVoxL);
+#if VOCAL_STEREO_TRACTS
+    gVoxArt.apply(gVoxR);
+#endif
+    gVoxArt.dirty = false;
+  }
+}
+
 // keepPhase = true conserva fase/LPF (retrigger legato sin click); false reinicia.
 static void voiceStart(Voice& v, uint8_t note, uint8_t t, bool keepPhase,
                        float vel, int delaySamples) {
@@ -745,6 +858,7 @@ static void voiceStart(Voice& v, uint8_t note, uint8_t t, bool keepPhase,
   v.fmEnv = 1.0f;
   v.fmEnv2 = 1.0f;
   v.hbK = lpCoef(e.cutHz);            // HBRASS: cutoff editable, aplicado al próximo note-on
+  if (v.osc == ENG_VOCAL) voxAttack(t);   // VOCAL: manda la vocal / canta la sílaba siguiente
   // Paneo por nota (equipotencia): los acordes se abren en el campo estéreo.
   // Determinístico por nota (misma nota = misma posición) y disperso para
   // decorrelacionar L/R como la referencia premium.
@@ -801,6 +915,21 @@ static inline void renderVoiceStereo(Voice& v, float& outL, float& outR) {
   if (!v.amp.active()) { v.active = false; outL = outR = 0; return; }
   float sc   = 1.0f + e.vib  * v.lfoVal;          // vibrato (pitch); 0 en brass
   float trem = 1.0f + e.trem * v.lfoVal;          // trémolo (amplitud); 0 en brass/epiano
+
+  if (v.osc == ENG_VOCAL) {
+    // VOCAL: acá sólo sale la FUENTE glótica de esta nota (derivada del flujo +
+    // aspiración), ya paneada. renderMixStereoRaw la manda al tracto compartido.
+    // La envolvente va en la fuente: al soltar, el tubo se apaga solo (físico).
+    float d0 = v.inc0*sc;
+    v.ph0 += d0; if (v.ph0>=1) v.ph0-=1;
+    float src = vocalGlottisDeriv(v.ph0, d0)
+              + voxNoise() * VOX_BREATH * (VOX_LEAK + vocalGlottisFlow(v.ph0));
+    v.hbLp += v.hbK * (src - v.hbLp);             // brillo de la voz (cutHz), 1 polo
+    float g = v.hbLp * env * trem * v.ampScale;
+    outL = g * v.panL * 1.4142f;
+    outR = g * v.panR * 1.4142f;
+    return;
+  }
 
   if (v.osc == T_STRINGS) {                       // 3 saws band-limited repartidos L/R
     float d0 = v.inc0*sc, d1 = v.inc1*sc, d2 = v.inc2*sc;
@@ -961,6 +1090,14 @@ void dspInit() {
   gFxMode = 2;
   gFxLow = 0.0f;
   gBodyOn = false; gBodyAmt = 0.0f;
+  // VOCAL: dos tubos (L/R) de largo distinto; arrancan dormidos en la vocal A.
+  gVoxL.init((float)SAMPLE_RATE, 17.5f);
+  gVoxR.init((float)SAMPLE_RATE, 16.7f);
+  gVoxHold = 0; gVoxTimbre = T_VOCAL; gVoxMorph = -1.0f; gVoxRng = 0x9E3779B9u;
+  gVoxArt.reset(VOCAL_MORPH_A);
+  gVoxSyl = 0; gVoxOpen = -1; gVoxSince = 0x7FFFFFFF; gVoxCtl = 0;
+  gVoxVoice = 1.0f; gVoxNoise = 0.0f;
+  // (la letra cargada y su on/off sobreviven a dspInit: son configuración, como ENV)
   // Looper: reinicia el estado de reproducción (los buffers los mantiene looperInit).
   for (int i = 0; i < LOOPER_LAYERS; i++) { gLp[i].state = LP_EMPTY; gLp[i].len = 0; gLp[i].pos = 0; }
   gLpMaster = 0; gLpPos = 0; gLpRun = true; gLpRecPend = false; gLpStopPend = false; gLpRecLayer = 0;
@@ -1123,6 +1260,7 @@ void dspMonoNote(uint8_t note, uint8_t timbre) {
   if (v.active && v.amp.stage != Adsr::ST_REL) {
     // legato: cambiar la altura objetivo sin re-atacar la envolvente
     v.timbre = timbre; v.note = note;
+    if (v.osc == ENG_VOCAL) voxAttack(timbre);   // VOCAL: nota nueva = sílaba nueva
     startGlide(v, (float)note);          // legato: desliza (tiempo constante) o salta
   } else {
     voiceStart(v, note, timbre, false, 1.0f, 0);   // arranque fresco (con ataque)
@@ -1145,6 +1283,8 @@ static void voiceRetarget(Voice& v, uint8_t note, uint8_t timbre) {
 
 void dspGlideChord(const uint8_t* notes, uint8_t n, uint8_t timbre) {
   if (n > MAX_CHORD_NOTES) n = MAX_CHORD_NOTES;
+  if (n > 0 && (ENV[timbre % T_COUNT].family % T_ENGINE_COUNT) == ENG_VOCAL)
+    voxAttack(timbre % T_COUNT);                 // VOCAL: acorde nuevo = sílaba nueva
   bool usedV[MAX_VOICES] = { false };
   bool placed[MAX_CHORD_NOTES] = { false };
 
@@ -1426,7 +1566,7 @@ static void blockSetup(int n) {
     }
     if (needFreq) voiceSetFreq(v, v.curMidi + v.detune + v.drift + v.atkPitch);
     v.lfoVal = v.lfo.process(blockDt);              // valor del LFO para todo el bloque
-    if (v.osc != T_HBRASS) {
+    if (v.osc != T_HBRASS && v.osc != ENG_VOCAL) {  // VOCAL no usa el SVF (su filtro es el tracto)
       float fc = e.cutHz * powf(2.0f, e.fEnvOct * v.fenv.level);
       v.filt.setCoeffs(fc, e.res, (float)SAMPLE_RATE);
       if (v.osc == T_STRINGS)                       // canal R de las cuerdas (ancho estéreo)
@@ -1455,6 +1595,7 @@ static inline float fastTanh(float x) {
 // Mezcla estéreo seca (sin master): suma de voces en L y R.
 static inline void renderMixStereoRaw(float& mixL, float& mixR) {
   mixL = 0; mixR = 0;
+  float exL = 0.0f, exR = 0.0f;                    // bus de excitación del coro VOCAL
   for (auto& v : voices) {
     if (!v.active) continue;
     float l, r; renderVoiceStereo(v, l, r);
@@ -1462,7 +1603,37 @@ static inline void renderMixStereoRaw(float& mixL, float& mixR) {
     // Variante HBRASS E: el bajo armónico reemplaza al seno a nivel pleno, pero
     // se atenúa para reforzar 125–250 Hz sin tapar el acorde ni saturar el bus.
     if (v.group == VG_BASS && v.osc == T_HBRASS) g *= 0.65f;
+    if (v.osc == ENG_VOCAL) {                      // VOCAL: la voz entrega su fuente glótica
+      exL += l * g; exR += r * g; gVoxHold = VOX_HOLD;
+      continue;
+    }
     mixL += l * g; mixR += r * g;
+  }
+  if (gVoxHold > 0) {                              // coro despierto: tracto(s) compartido(s)
+    if (--gVoxCtl <= 0) { gVoxCtl = VOX_CTL; voxControl(); }
+    gVoxSince++;
+    // Sonoridad y ruido de la articulación, suavizados por muestra (sin escalones).
+    gVoxVoice += 0.02f * (gVoxArt.voiceT - gVoxVoice);
+    gVoxNoise += 0.01f * (gVoxArt.noiseT - gVoxNoise);
+    exL *= gVoxVoice; exR *= gVoxVoice;
+    float nzL = 0.0f, nzR = 0.0f;
+    if (gVoxNoise > 1e-4f) {
+      float ng = gVoxNoise * VOX_FRIC * gSynthGain;
+      // Color de la turbulencia: pasa-bajos de 1 polo (o su complemento = silbante).
+      float col = gVoxArt.noiseColor, kc = (col < 0.0f) ? -col : col;
+      float wl = voxNoise(), wr = voxNoise();
+      gVoxNzL += kc * (wl - gVoxNzL); gVoxNzR += kc * (wr - gVoxNzR);
+      nzL = ((col < 0.0f) ? (wl - gVoxNzL) : gVoxNzL) * ng;
+      nzR = ((col < 0.0f) ? (wr - gVoxNzR) : gVoxNzR) * ng;
+    }
+#if VOCAL_STEREO_TRACTS
+    mixL += gVoxL.tickFull(exL, nzL) * VOX_OUT;
+    mixR += gVoxR.tickFull(exR, nzR) * VOX_OUT;
+#else
+    float vo = gVoxL.tickFull(0.7071f * (exL + exR), nzL) * (0.7071f * VOX_OUT);   // un tubo, al centro
+    mixL += vo; mixR += vo; (void)nzR;
+#endif
+    if (--gVoxHold == 0) { gVoxL.reset(); gVoxR.reset(); }   // cola agotada: duerme limpio
   }
 }
 
@@ -1859,3 +2030,23 @@ int dspActiveVoices() {
   for (auto& v : voices) if (v.active) c++;
   return c;
 }
+
+// --- VOCAL etapa 2: letra ---
+void dspVocalSetLyrics(const VocalLyrics* ly) {
+  if (ly && ly->count > 0) gVoxLy = *ly; else gVoxLy.count = 0;
+  if (gVoxLy.count > VOCAL_SYL_MAX) gVoxLy.count = VOCAL_SYL_MAX;
+  gVoxSyl = 0; gVoxOpen = -1; gVoxSince = 0x7FFFFFFF;
+  gVoxMorph = -1.0f;                 // al volver al modo sin letra, re-aplica la vocal del timbre
+}
+void dspVocalSetText(const char* utf8) {
+  static VocalLyrics tmp;            // (no reentrante: es un atajo para host/tests)
+  vocalTextToLyrics(utf8 ? utf8 : "", &tmp);
+  dspVocalSetLyrics(&tmp);
+}
+void dspVocalLyricsOn(bool on) {
+  gVoxLyOn = on; gVoxOpen = -1; gVoxMorph = -1.0f;
+}
+bool dspVocalLyricsActive()   { return voxLyrics(); }
+void dspVocalLyricsReset()    { gVoxSyl = 0; gVoxOpen = -1; gVoxSince = 0x7FFFFFFF; }
+int  dspVocalSyllable()       { return gVoxSyl; }
+int  dspVocalSyllableCount()  { return gVoxLy.count; }

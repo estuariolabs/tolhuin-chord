@@ -28,6 +28,8 @@ tolhuin_chord_v2/
   state.h             <- tipos compartidos (AppState, Mode, ColorZone, Voicing)
   harmony.h/.cpp      <- motor de armonía diatónica (compila en host y ESP32)
   dsp.h/.cpp          <- síntesis pura (OSC, ADSR, filtro, mix) — SIN hardware
+  vocal.h/.cpp        <- voz por modelado físico (glotis + tracto + consonantes), DSP puro; ver docs/VOCAL.md
+  vocal_text.h/.cpp   <- texto -> fonemas -> sílabas (español, por reglas), puro
   synth.h/.cpp        <- wrapper I2S + FreeRTOS que llama a dsp
   webcfg.h/.cpp       <- protocolo de config por USB (Serial '#...' -> JSON) + NVS
   webtool/            <- editor web estático (Web Serial): timbres, drums, flasheo
@@ -35,6 +37,8 @@ tolhuin_chord_v2/
     run_tests.ps1     <- runner de host (clang++/g++)
     test_harmony.cpp  <- tests de armonía (deterministas)
     test_dsp.cpp      <- tests de audio (NaN/clip/RMS/Goertzel) [creado en T0.3]
+    test_vocal.cpp    <- tests del timbre VOCAL (formantes, vocales, rango, acordes)
+    test_vocal_text.cpp <- tests de la letra cantada (silabeo, consonantes, motor)
   diag_i2s_sine/      <- diagnóstico de hardware I2S (no tocar)
 ```
 

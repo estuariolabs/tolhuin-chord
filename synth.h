@@ -168,6 +168,18 @@ void        synthNoteOff(uint8_t note);
 // Con timbre explícito (melodía del looper: suena con el timbre grabado).
 void        synthNoteOnT(uint8_t note, uint8_t vel, uint8_t timbre);
 
+// VOCAL etapa 2: letra cantada (una sílaba por ataque). El texto se guarda en
+// ASCII (escapes ~n 'a :u para ñ, tildes y ü); "" = sin letra.
+void        synthVocalSetText(const char* text);
+const char* synthVocalText();
+void        synthVocalLyricsOn(bool on);     // usar o no la letra cargada
+bool        synthVocalLyrics();
+void        synthVocalReset();               // volver a la primera sílaba
+int         synthVocalSyllable();            // próxima sílaba (0..count-1)
+int         synthVocalSyllableCount();
+void        synthVocalSetVowel(uint8_t v);   // vocal del timbre VOCAL: 0..4 = A E I O U
+uint8_t     synthVocalVowel();
+
 // Nivel de salida (pico del último bloque, 0..1) para la pantalla.
 float       synthGetLevel();
 

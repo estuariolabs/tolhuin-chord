@@ -67,6 +67,14 @@ static const uint8_t PIN_CHORD[PIN_CHORD_COUNT] = {8, 9, 17, 45, 5, 14, 10}; // 
 #define MAX_VOICES      12       // polifonía real (con cola de release)
 #define MASTER_GAIN     0.20f    // headroom global (evita saturar acordes densos)
 
+// ---- Voz por modelado físico (timbre VOCAL) ----
+// 1 = dos tractos (L/R, coro con ancho estéreo). 0 = un solo tracto compartido:
+// la mitad del costo fijo del timbre, sin ancho propio (queda el del chorus/reverb).
+// Es la perilla para bajar CPU si la medición en placa (#perf) no da margen.
+#ifndef VOCAL_STEREO_TRACTS
+#define VOCAL_STEREO_TRACTS 1
+#endif
+
 // ---- Armonía ----
 #define MAX_CHORD_NOTES 8        // tope de notas simultáneas por acorde
 
