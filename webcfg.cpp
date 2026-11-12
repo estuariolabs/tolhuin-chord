@@ -194,7 +194,8 @@ static void nvsSave() {
 static bool nvsLoad() {
   prefs.begin("tolhuin", true);
   bool any = false;
-  // Historial de layouts: 14 (sin HBRASS), 15 (HBRASS), 17 (EPIANO B/C).
+  // Historial de layouts: 14 (sin HBRASS), 15 (HBRASS), 17 (EPIANO B/C),
+  // 18 (+VOCAL, agregado AL FINAL: los índices 0..16 no se movieron).
   uint8_t storedTimbres = prefs.getUChar("tcnt", 0);
   if (storedTimbres == 0) {
     if      (prefs.isKey("env16")) storedTimbres = 17;
@@ -207,8 +208,10 @@ static bool nvsLoad() {
   // seis USR anteriores se desplazan de 8..13 a 9..14.
   if (prefs.getUShort("cfgv", 0) == (uint16_t)sizeof(EnvCfg)) {
     char key[8];
-    if (storedTimbres == T_COUNT) {
-      for (uint8_t t = 0; t < T_COUNT; t++) {
+    if (storedTimbres == T_COUNT || storedTimbres == 17) {
+      // Layout 17 -> 18: mismos índices; VOCAL (17) no estaba guardado y queda
+      // de fábrica. Sin esta rama, actualizar el firmware borraba las ediciones.
+      for (uint8_t t = 0; t < storedTimbres; t++) {
         EnvCfg e;
         snprintf(key, sizeof(key), "env%u", t);
         if (prefs.getBytes(key, &e, sizeof(e)) == sizeof(e)) { synthEnvApply(t, e); any = true; }
@@ -682,10 +685,15 @@ static void processLine(char* line) {
     bool reset = args && strcmp(args, "reset") == 0;
     uint32_t maxUs = 0, late = 0;
     synthPerfStats(&maxUs, &late, reset);
-    outf("{\"cmd\":\"perf\",\"maxUs\":%lu,\"lateBlocks\":%lu,\"budgetUs\":%lu,\"voices\":%d,\"reset\":%d}\n",
+    // heapFree/heapMin = RAM interna libre ahora / mínimo histórico; psram = bytes
+    // de PSRAM detectados por el core (0 = la placa NO tiene o no la inicializó).
+    outf("{\"cmd\":\"perf\",\"maxUs\":%lu,\"lateBlocks\":%lu,\"budgetUs\":%lu,\"voices\":%d,\"reset\":%d,"
+         "\"heapFree\":%lu,\"heapMin\":%lu,\"psram\":%lu}\n",
          (unsigned long)maxUs, (unsigned long)late,
          (unsigned long)((1000000ULL * AUDIO_BLOCK) / SAMPLE_RATE),
-         dspActiveVoices(), reset ? 1 : 0);
+         dspActiveVoices(), reset ? 1 : 0,
+         (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getMinFreeHeap(),
+         (unsigned long)ESP.getPsramSize());
   }
   else if (strcmp(cmd, "save") == 0) {
     nvsSave();

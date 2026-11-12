@@ -561,7 +561,7 @@ const FIELDS = {
   fmdec2:  ["tine ms",     0,   500,  2,      "grpFm"],
   fmidx2:  ["tine nivel",  0,   1,    0.01,   "grpFm"],
   tine:    ["tine ratio",  0,   12,   0.02,   "grpFm"],
-  wtmorph: ["morph (WAVE)",0,   1,    0.01,   "grpFil"],
+  wtmorph: ["morph (WAVE) / vocal A-E-I-O-U (VOCAL)",0,   1,    0.01,   "grpFil"],
 };
 
 // Crea los sliders (una sola vez).
@@ -617,7 +617,7 @@ function applyEnvToUI(e) {
     $("o_" + key).textContent = fmtVal(e[key]);
   }
   $("percChk").checked = !!e.perc;
-  const isUser = curTimbre >= USER_FIRST;
+  const isUser = (NAMES[curTimbre] || "").startsWith("USR");   // VOCAL va después de los USR y no es slot de usuario
   $("familyRow").style.display = isUser ? "flex" : "none";
   if (isUser && e.family !== undefined) $("familySel").value = e.family;
 }

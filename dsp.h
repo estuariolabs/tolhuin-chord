@@ -26,9 +26,14 @@ enum Timbre {
   T_EPIANO_C,                         // Dyno brillante: ataque metálico y cola definida
   T_USER1, T_USER2, T_USER3,          // timbres de USUARIO: familia de oscilador
   T_USER4, T_USER5, T_USER6,          // elegible (EnvCfg.family) + params libres
+  T_VOCAL,                            // voz por modelado físico (glotis + tracto, vocal.h).
+                                      // Agregado AL FINAL: no corre ningún índice guardado en NVS.
   T_COUNT
 };
-static constexpr uint8_t T_ENGINE_COUNT = T_HBRASS + 1; // motores DSP reales; B/C reutilizan EPIANO
+// Motores DSP reales (valores de EnvCfg.family / Voice.osc). 0..T_HBRASS coinciden
+// con su timbre; ENG_VOCAL es un MOTOR, no un índice de timbre (el timbre es T_VOCAL).
+static constexpr uint8_t ENG_VOCAL = T_HBRASS + 1;
+static constexpr uint8_t T_ENGINE_COUNT = ENG_VOCAL + 1; // B/C reutilizan EPIANO
 
 // Cantidad de patrones de batería: 0=off, 1..3 fábrica, 4..11 editables (usuario).
 #define DRUM_PATTERNS 12
@@ -62,6 +67,9 @@ struct EnvCfg {
   // wtMorph * nivel de la envolvente de filtro -> el espectro BARRE los 4
   // frames (oscuro -> brillante) siguiendo la dinámica de la nota.
   float wtMorph = 0;
+  // VOCAL reutiliza campos existentes (NO cambia el sizeof ni el NVS):
+  //   wtMorph = vocal (0=A .25=E .5=I .75=O 1=U, interpola), cutHz = brillo de
+  //   la fuente glótica, vib/lfoRate = vibrato, atk/dec/sus/rel = envolvente.
   // FAMILIA de oscilador (0..T_WAVE, 8 familias base). En los timbres base es su
   // propio índice; en T_USER1..6 elige QUÉ motor de oscilador usa el slot (el
   // resto de los parámetros son libres). Cambia el sizeof -> el cfgv de NVS
