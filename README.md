@@ -90,3 +90,15 @@ serví el webtool con el binario al lado.
 
 **GPL-3.0-or-later** (ver [`LICENSE`](LICENSE)). Los samples de batería en
 `tools/samples/` son originales del autor (grabados en Logic Pro).
+
+## Laboratorio web y pantalla 240 × 240
+
+`emulator/` compila este firmware a WebAssembly con periféricos virtuales;
+conserva el DSP, controles, menú y OLED originales. Incluye audio estéreo,
+tres propuestas de pantalla RGB565 en C++, sesiones exportables y adaptadores
+Web MIDI / USB Serial / BLE MIDI.
+
+Ver [cómo construir y usar el port](emulator/README.md) y la
+[evaluación de hardware, fidelidad y pruebas](docs/evaluacion-pantalla.md).
+No requiere flashear Tolhuin para probarlo. La TFT y las conexiones físicas
+requieren validación con el dispositivo real.

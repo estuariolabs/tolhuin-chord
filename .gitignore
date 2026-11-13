@@ -46,3 +46,8 @@ case/*.stl
 case/*.png
 case_monojuan/*.stl
 case_monojuan/*.png
+
+# Port web: fuentes versionados; build y resultados regenerables.
+/dist/
+/emulator/generated/
+/emulator/tests/out/

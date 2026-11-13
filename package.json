@@ -1,0 +1,9 @@
+{
+  "name": "tolhuin-firmware-lab",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "python3 emulator/build.py",
+    "test": "python3 emulator/tests/run-native.py && node emulator/tests/port.test.mjs && node --experimental-vm-modules emulator/tests/worklet.test.mjs && node emulator/tests/midi-transport.test.mjs"
+  }
+}
