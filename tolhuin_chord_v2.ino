@@ -116,7 +116,15 @@ static void midiOut(const uint8_t* notes, uint8_t n) {
   }
   if (nOff || nOn) midiSendChord(off, nOff, on, nOn, 100);   // todo en un paquete
   for (uint8_t j = 0; j < n; j++) moutNotes[j] = notes[j];
+  // Si se perdió un diff anterior, al soltar el último acorde se limpian
+  // también las notas que ya no estaban en la lista de Tolhuin.
+  if (moutN && n == 0) midiSendAllNotesOff();
   moutN = n;
+#ifdef TOLHUIN_MIDI_MONITOR
+  Serial.printf("[midi] %lu ms emisor=%u notas:", (unsigned long)millis(), (unsigned)n);
+  for (uint8_t j = 0; j < n; j++) Serial.printf(" %u", (unsigned)notes[j]);
+  Serial.println();
+#endif
 }
 
 static void playCurrent(bool fromLoop);   // (definida más abajo; la usa setMono)

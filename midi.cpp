@@ -284,6 +284,11 @@ void midiSendNoteOff(uint8_t note) {
   sendBle(0x80, note, 0);
 }
 
+void midiSendAllNotesOff() {
+  sendUsb(0x0B, 0xB0, 123, 0);
+  sendBle(0xB0, 123, 0);
+}
+
 void midiSendChord(const uint8_t* off, uint8_t nOff,
                    const uint8_t* on, uint8_t nOn, uint8_t vel) {
   uint8_t v = (vel > 127) ? 127 : vel;
