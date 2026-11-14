@@ -34,6 +34,7 @@ void  midiSendSysExText(const char* text, int len);
 // --- MIDI OUT: manda lo que tocás por USB + BLE (para grabar en un DAW/GarageBand) ---
 void  midiSendNoteOn(uint8_t note, uint8_t vel);
 void  midiSendNoteOff(uint8_t note);
+void  midiSendAllNotesOff();
 // Manda un acorde entero: note-offs + note-ons en UN solo paquete BLE (evita que
 // el stack descarte notificaciones en ráfaga). vel = velocity de las note-on.
 void  midiSendChord(const uint8_t* off, uint8_t nOff,
