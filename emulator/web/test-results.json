@@ -1,0 +1,26 @@
+{
+  "summary": "15 pruebas de integración aprobadas + 4 suites originales en host.",
+  "checks": [
+    "Arranque del programa original y valores de fábrica",
+    "GPIO: antirrebote, note-on/off y audio estéreo PCM finito",
+    "HOLD y gestos largos STRUM/ARP con exclusión original",
+    "Inversión y cambio de modo desde los pulsadores originales",
+    "Joystick: zonas, histéresis y regreso al centro",
+    "Menú original: navegación y edición con el joystick",
+    "Transporte de batería desde NAV−",
+    "Tres framebuffers RGB565 240×240 y OLED original 128×64",
+    "Protocolo #save y restauración NVS en una instancia nueva",
+    "Parser USB MIDI original: entrada y liberación de notas",
+    "SysEx USB F0 7D 01 → respuesta JSON F0 7D 02",
+    "Clock MIDI de entrada y sincronización del tempo",
+    "Looper de eventos: grabación y reproducción desde el menú original",
+    "Audio nativo vs WASM: 307200 muestras, NRMSE 0.0002%",
+    "Silencio de emergencia: libera notas y detiene arp, batería y loop"
+  ],
+  "additionalChecks": [
+    "AudioWorklet sin DOM: PCM estéreo, MIDI, controles y framebuffers",
+    "Transporte BLE: running status, note-off, realtime y SysEx fragmentado"
+  ],
+  "physicalHardware": "pending",
+  "upstream": "c61a07c16a8dfaeaead07646cc7d6c57997ade9f"
+}
